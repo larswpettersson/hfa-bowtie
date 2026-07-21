@@ -7,9 +7,8 @@
   <!--
     Vanilla refactor of prototype3 — no external CDN scripts or fonts.
     Typography: Source Sans 3 system stack (update Penpot roboto-base token accordingly).
-    Rebuilt from the Penpot "Bowtie Application" board only
-    (Toolbar + Legend + "Bowtie example" diagram; the standalone "Hazard"
-    node lives outside this board and is intentionally excluded).
+    Rebuilt from the Penpot "Bowtie Application" board plus the standalone
+    Hazard node from the connector board (above Top Event, straight connector).
 
     Connector rule (from Penpot's 5 Connector paths):
     - Each Cause connects to Top Event; each Consequence is reached from
@@ -25,9 +24,10 @@
       --color-background-sunken: #e6edf3;
       --color-background-elevated: #ffffff;
       --color-foreground: #0d1117;
+      --color-foreground-subtle: #8b949e;
       --font-sans: "Source Sans 3", "Source Sans Pro", system-ui,
                    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      --gap-row: 8px;
+      --gap-row: 64px;
       --gap-col: 16px;
       --barrier-width: 64px;
       --card-radius: 8px;
@@ -43,6 +43,7 @@
       --color-background-sunken: #0d1117;
       --color-background-elevated: #383d45;
       --color-foreground: #fafbfc;
+      --color-foreground-subtle: #9ca3af;
       --status-implemented: #1a5a42;
       --status-not-implemented: #602a36;
       --status-temporary: #254f7a;
@@ -161,6 +162,33 @@
       z-index: 2;
     }
 
+    .center-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 64px;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* Hazard: Penpot 123×55, border-radius 0 */
+    .hazard {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 123px;
+      min-height: 55px;
+      padding: 4px 8px;
+      background: var(--color-background-base);
+      border: 1px solid var(--color-foreground);
+      border-radius: 0;
+      text-align: center;
+      position: relative;
+      z-index: 2;
+    }
+
+    .hazard .label { outline: none; padding: 4px; }
+
     .zone--right {
       display: grid;
       grid-template-columns: var(--barrier-width) var(--barrier-width) minmax(200px, 1fr);
@@ -210,28 +238,38 @@
        (:hover); keyboard tab into text fields does not trigger it. */
     .card,
     .barrier {
-      transition: opacity 150ms ease, box-shadow 150ms ease;
+      transition: opacity 150ms ease, box-shadow 150ms ease, color 150ms ease,
+                  background-color 150ms ease, border-color 150ms ease;
     }
 
     .card:hover,
     .barrier:hover,
+    .hazard:hover,
     .top-event:hover {
       box-shadow: 4px 4px 4px var(--interaction-shadow);
     }
 
     .card.is-selected,
     .barrier.is-selected,
+    .hazard.is-selected,
     .top-event.is-selected {
       box-shadow: 0 0 2px 4px var(--interaction-shadow);
     }
 
+    .hazard,
     .top-event { transition: box-shadow 150ms ease, opacity 150ms ease; }
 
-    .card.is-linked-elsewhere {
-      box-shadow: 0 0 2px 3px var(--interaction-shadow);
+    /* Link mode: leaves not protected by the active barrier (Penpot K3 look). */
+    .card.is-unaffected {
+      color: var(--color-foreground-subtle);
+      background: transparent;
+      border-color: var(--color-foreground-subtle);
+      box-shadow: none;
     }
 
-    .card.is-dimmed { opacity: 0.4; }
+    .card.is-unaffected:hover {
+      box-shadow: none;
+    }
 
     .card.link-target { cursor: pointer; }
 
@@ -367,7 +405,7 @@
       color: #57606a;
     }
 
-    /* Connectors render *behind* barriers/cards/toolbar/legend/top-event
+    /* Connectors render *behind* barriers/cards/hazard/toolbar/legend/top-event
        (all of which set position:relative + z-index:2 above). */
     .connectors-layer {
       position: absolute;
@@ -441,9 +479,14 @@ lines long</p>
             </div>
           </section>
 
-          <section class="zone zone--center" id="zone-center" aria-label="Top Event">
-            <div class="top-event">
-              <div class="label id-tag" contenteditable="true" id="id-TE">Top Event</div>
+          <section class="zone zone--center" id="zone-center" aria-label="Hazard and Top Event">
+            <div class="center-stack">
+              <div class="hazard">
+                <div class="label id-tag" contenteditable="true" id="id-HZ">Hazard</div>
+              </div>
+              <div class="top-event">
+                <div class="label id-tag" contenteditable="true" id="id-TE">Top Event</div>
+              </div>
             </div>
           </section>
 
@@ -691,11 +734,12 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
       function toBowtiePoint(el, edge) {
         const bowtieRect = bowtie.getBoundingClientRect();
         const rect = el.getBoundingClientRect();
-        const y = rect.top + rect.height / 2 - bowtieRect.top;
-        let x;
+        let x = rect.left + rect.width / 2 - bowtieRect.left;
+        let y = rect.top + rect.height / 2 - bowtieRect.top;
         if (edge === "left") x = rect.left - bowtieRect.left;
         else if (edge === "right") x = rect.right - bowtieRect.left;
-        else x = rect.left + rect.width / 2 - bowtieRect.left;
+        else if (edge === "top") y = rect.top - bowtieRect.top;
+        else if (edge === "bottom") y = rect.bottom - bowtieRect.top;
         return { x, y };
       }
 
@@ -757,6 +801,15 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
             });
         });
 
+        const hazard = document.querySelector(".hazard");
+        const topEvent = document.querySelector(".top-event");
+        if (hazard && topEvent) {
+          const line = makeSvgLine();
+          line.setAttribute("stroke", lineColor);
+          connectorsLayer.append(line);
+          connectors.push({ kind: "hazard", lineA: line, lineB: null, source: hazard, target: topEvent });
+        }
+
         positionAllConnectors();
         updateTabOrder();
       }
@@ -765,7 +818,7 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         while (connectors.length) {
           const c = connectors.pop();
           c.lineA.remove();
-          c.lineB.remove();
+          if (c.lineB) c.lineB.remove();
         }
       }
 
@@ -777,6 +830,17 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         const lineColor = connectorColor();
 
         connectors.forEach((c) => {
+          if (c.kind === "hazard") {
+            const sourcePt = toBowtiePoint(c.source, "bottom");
+            const targetPt = toBowtiePoint(c.target, "top");
+            c.lineA.setAttribute("x1", sourcePt.x);
+            c.lineA.setAttribute("y1", sourcePt.y);
+            c.lineA.setAttribute("x2", targetPt.x);
+            c.lineA.setAttribute("y2", targetPt.y);
+            c.lineA.setAttribute("stroke", lineColor);
+            return;
+          }
+
           const sourcePt = toBowtiePoint(c.source, c.exitSocket);
           const targetPt = toBowtiePoint(c.target, c.arriveSocket);
           const sourceRect = c.source.getBoundingClientRect();
@@ -803,8 +867,8 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
       // Keeps keyboard Tab order in sync with the *visualized*, logical
       // flow of the bowtie rather than DOM/append order (which drifts as
       // cards/barriers are added, deleted, or reordered): Causes top to
-      // bottom, then Preventive barriers left to right, then Top Event,
-      // then Reactive barriers left to right, then Consequences top to
+      // bottom, then Preventive barriers left to right, then Hazard, then
+      // Top Event, then Reactive barriers left to right, then Consequences top to
       // bottom. A multi-segment barrier (e.g. a split P1) only gets a
       // single tab stop, at its first (topmost, then leftmost) segment —
       // the other segments are skipped, not tabbed to individually.
@@ -839,11 +903,13 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         );
         const preventiveBarriers = firstBarrierSegmentsInColumnOrder(zoneLeft);
         const reactiveBarriers = firstBarrierSegmentsInColumnOrder(zoneRight);
+        const hazard = document.querySelector(".hazard");
         const topEvent = document.querySelector(".top-event");
 
         const orderedFields = [
           ...causes.flatMap(fieldsOf),
           ...preventiveBarriers.flatMap(fieldsOf),
+          ...fieldsOf(hazard),
           ...fieldsOf(topEvent),
           ...reactiveBarriers.flatMap(fieldsOf),
           ...consequences.flatMap(fieldsOf),
@@ -984,13 +1050,6 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         });
       }
 
-      function isLinkedToOtherBarrier(idTagId, excludeBarrier) {
-        const excludeGroup = excludeBarrier.dataset.barrierId;
-        return Array.from(document.querySelectorAll(".barrier[data-protects]")).some(
-          (b) => b.dataset.barrierId !== excludeGroup && getProtectedIds(b).includes(idTagId)
-        );
-      }
-
       function leafZoneAndKindFor(barrier) {
         const isLeft = !!barrier.closest("#zone-left");
         return { zone: isLeft ? zoneLeft : zoneRight, kind: isLeft ? "cause" : "consequence" };
@@ -1005,10 +1064,8 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
           const idTag = card.querySelector('[data-role="id"]');
           const idTagId = idTag ? idTag.id : null;
           const isProtected = !!idTagId && protectedIds.includes(idTagId);
-          const linkedElsewhere = !isProtected && idTagId && isLinkedToOtherBarrier(idTagId, activeBarrier);
           card.classList.toggle("is-selected", isProtected);
-          card.classList.toggle("is-linked-elsewhere", linkedElsewhere);
-          card.classList.toggle("is-dimmed", !isProtected && !linkedElsewhere);
+          card.classList.toggle("is-unaffected", !isProtected);
         });
       }
 
@@ -1051,7 +1108,7 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
       function cloneBarrierSegment(primary, index) {
         const clone = primary.cloneNode(true);
         clone.id = `${primary.id}--${index}`;
-        clone.classList.remove("is-selected", "is-linked-elsewhere", "is-dimmed", "link-target");
+        clone.classList.remove("is-selected", "is-unaffected", "link-target");
 
         const idTag = clone.querySelector('[data-role="id"]');
         if (idTag) {
@@ -1124,7 +1181,7 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         getBarrierSegments(activeBarrier).forEach((seg) => seg.classList.remove("is-selected"));
         document.body.classList.remove("linking-mode");
         document.querySelectorAll(".card.link-target").forEach((card) => {
-          card.classList.remove("link-target", "is-selected", "is-dimmed", "is-linked-elsewhere");
+          card.classList.remove("link-target", "is-selected", "is-unaffected");
         });
         activeBarrier = null;
         fitAllBarrierDescriptions();
@@ -1325,6 +1382,7 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         const mod = isModClick(evt);
         const barrierEl = evt.target.closest(".barrier");
         const cardEl = evt.target.closest(".card");
+        const hazardEl = evt.target.closest(".hazard");
         const topEventEl = evt.target.closest(".top-event");
 
         if (cardEl && cardEl.classList.contains("link-target") && !mod) {
@@ -1348,6 +1406,10 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
             selectComponent(topEventEl);
             return;
           }
+          if (hazardEl && !activeBarrier) {
+            selectComponent(hazardEl);
+            return;
+          }
         }
 
         if (barrierEl && !evt.target.closest(".id-tag, .desc-text")) {
@@ -1366,6 +1428,11 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
           return;
         }
 
+        if (hazardEl && !activeBarrier && !evt.target.closest(".id-tag, .desc-text")) {
+          selectComponent(hazardEl);
+          return;
+        }
+
         if (activeBarrier) exitLinkMode();
         else clearComponentSelection();
       });
@@ -1378,7 +1445,7 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         const active = document.activeElement;
         if (!active || !active.isContentEditable) return;
         evt.preventDefault();
-        const component = active.closest(".card, .barrier, .top-event");
+        const component = active.closest(".card, .barrier, .hazard, .top-event");
         active.blur();
         selectComponent(component);
       });
@@ -1390,7 +1457,7 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         if (active && active.isContentEditable) {
           // Leaving text-edit mode selects the component that field
           // belongs to, instead of just deselecting everything.
-          const component = active.closest(".card, .barrier, .top-event");
+          const component = active.closest(".card, .barrier, .hazard, .top-event");
           active.blur();
           selectComponent(component);
           return;
@@ -1467,7 +1534,7 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         activeBarrier = null;
         document.body.classList.remove("linking-mode");
         document.querySelectorAll(".card.link-target").forEach((card) => {
-          card.classList.remove("link-target", "is-selected", "is-dimmed", "is-linked-elsewhere");
+          card.classList.remove("link-target", "is-selected", "is-unaffected");
         });
 
         // Close the gap: shift every barrier lane after the removed one in by one.
@@ -1504,7 +1571,7 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
           deleteBarrierGroup(activeBarrier);
           return;
         }
-        if (selectedComponent && !selectedComponent.classList.contains("top-event")) {
+        if (selectedComponent && !selectedComponent.classList.contains("top-event") && !selectedComponent.classList.contains("hazard")) {
           evt.preventDefault();
           // A multi-selection deletes every card in it, not just the focus.
           const toDelete = selectedComponents.size > 1 ? Array.from(selectedComponents) : [selectedComponent];
