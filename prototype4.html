@@ -24,12 +24,13 @@
       --color-background-sunken: #e6edf3;
       --color-background-elevated: #ffffff;
       --color-foreground: #0d1117;
+      --color-foreground-muted: #57606a;
       --color-foreground-subtle: #8b949e;
       --font-sans: "Source Sans 3", "Source Sans Pro", system-ui,
                    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      --gap-row: 64px;
+      --gap-row: 16px;
       --gap-col: 16px;
-      --barrier-width: 64px;
+      --barrier-width: 78px;
       --card-radius: 8px;
       /* Status colours mirror Penpot semantic tokens (background.*). */
       --status-implemented: #6baf8a;
@@ -43,6 +44,7 @@
       --color-background-sunken: #0d1117;
       --color-background-elevated: #383d45;
       --color-foreground: #fafbfc;
+      --color-foreground-muted: #c9d1d9;
       --color-foreground-subtle: #9ca3af;
       --status-implemented: #1a5a42;
       --status-not-implemented: #602a36;
@@ -215,6 +217,14 @@
       align-self: center;
       position: relative;
       z-index: 2;
+    }
+
+    .card[data-kind="cause"] {
+      min-width: 200px;
+    }
+
+    .card[data-kind="cause"] .desc-text {
+      width: 100%;
     }
 
     .barrier {
@@ -610,10 +620,20 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         return description.length > 200 ? description.substring(0, 200) + "..." : description;
       }
 
+      // contenteditable line breaks are <br> nodes; textContent drops them.
+      // innerText preserves breaks as \n (matches white-space: pre-wrap on write).
+      function readEditableText(el) {
+        return (el.innerText ?? el.textContent ?? "").replace(/\r\n?/g, "\n");
+      }
+
+      function writeEditableText(el, text) {
+        el.textContent = text;
+      }
+
       function applyDescriptionTruncation(el) {
-        const full = el.dataset.full || el.textContent || "";
+        const full = el.dataset.full || readEditableText(el);
         if (!el.dataset.full) el.dataset.full = full;
-        el.textContent = truncateDescription(el.dataset.full);
+        writeEditableText(el, truncateDescription(el.dataset.full));
       }
 
       // Barriers have a fixed width and a height dictated by their grid row(s),
@@ -621,21 +641,24 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
       // overflowing. Progressively shorten (binary search) until it fits the box,
       // ending with an ellipsis. No-op for cause/consequence cards since those
       // are sized with fit-content and never overflow their own box.
-      function fitBarrierDescription(el) {
+      // While a desc field is focused, skip fitting it — textContent writes reset
+      // the caret. Callers that commit edits (blur) pass { respectFocus: false }.
+      function fitBarrierDescription(el, { respectFocus = true } = {}) {
         if (!el || !el.closest(".barrier")) return;
-        const capped = truncateDescription(el.dataset.full || el.textContent || "");
-        el.textContent = capped;
+        if (respectFocus && el === document.activeElement) return;
+        const capped = truncateDescription(el.dataset.full || readEditableText(el));
+        writeEditableText(el, capped);
         if (el.scrollHeight <= el.clientHeight + 1) return;
 
         let lo = 0;
         let hi = capped.length;
         while (lo < hi) {
           const mid = Math.ceil((lo + hi) / 2);
-          el.textContent = capped.slice(0, mid).trimEnd() + "…";
+          writeEditableText(el, capped.slice(0, mid).trimEnd() + "…");
           if (el.scrollHeight <= el.clientHeight + 1) lo = mid;
           else hi = mid - 1;
         }
-        el.textContent = lo > 0 ? capped.slice(0, lo).trimEnd() + "…" : "…";
+        writeEditableText(el, lo > 0 ? capped.slice(0, lo).trimEnd() + "…" : "…");
       }
 
       function fitAllBarrierDescriptions() {
@@ -700,12 +723,12 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
       }
 
       function syncBarrierDescription(desc) {
-        const full = desc.dataset.full !== undefined ? desc.dataset.full : desc.textContent || "";
+        const full = desc.dataset.full !== undefined ? desc.dataset.full : readEditableText(desc);
         siblingBarrierSegments(desc).forEach((seg) => {
           const target = seg.querySelector('[data-role="description"]');
           if (!target) return;
           target.dataset.full = full;
-          target.textContent = truncateDescription(full);
+          writeEditableText(target, truncateDescription(full));
           fitBarrierDescription(target);
         });
       }
@@ -714,16 +737,18 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         applyDescriptionTruncation(el);
         fitBarrierDescription(el);
         el.addEventListener("focus", () => {
-          if (el.dataset.full) el.textContent = el.dataset.full;
+          if (el.dataset.full) writeEditableText(el, el.dataset.full);
         });
         el.addEventListener("input", () => {
-          el.dataset.full = el.textContent || "";
+          // Only persist full text while editing; never rewrite this field's DOM
+          // (that resets the caret). Truncation/fitting runs on blur.
+          el.dataset.full = readEditableText(el);
           syncBarrierDescription(el);
         });
         el.addEventListener("blur", () => {
-          el.dataset.full = el.textContent || "";
-          el.textContent = truncateDescription(el.dataset.full);
-          fitBarrierDescription(el);
+          el.dataset.full = readEditableText(el);
+          writeEditableText(el, truncateDescription(el.dataset.full));
+          fitBarrierDescription(el, { respectFocus: false });
           syncBarrierDescription(el);
           positionAllConnectors();
         });
