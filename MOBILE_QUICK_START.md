@@ -52,7 +52,7 @@ Show me the Toolbar component dimensions
 ```
 
 ```
-Update the button styles in prototype.html to match Penpot
+Update the button styles in Bowtie.html to match Penpot
 ```
 
 ```

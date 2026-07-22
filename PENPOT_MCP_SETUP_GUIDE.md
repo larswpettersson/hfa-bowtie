@@ -5,7 +5,7 @@ This guide will help you connect your Cursor app (desktop and mobile) to Penpot 
 ## Quick Reference
 
 Your repository contains:
-- `prototype.html` - Bowtie diagram editor (created from Penpot components)
+- `Bowtie.html` - Bowtie diagram editor (created from Penpot components)
 - Design tokens live in [hfa-ds](https://github.com/larswpettersson/hfa-ds) — not in this repo
 
 ## Setup Checklist
@@ -14,10 +14,10 @@ Your repository contains:
 
 1. Go to [design.penpot.app](https://design.penpot.app)
 2. Log in to your account
-3. Locate your **original Bowtie design file** (the one used to create `prototype.html`)
+3. Locate your **original Bowtie design file** (the one used to create `Bowtie.html`)
 4. Keep this tab open - you'll need it later
 
-**Note**: The HTML comments in `prototype.html` mention "Restored from Penpot components" - find that original file!
+**Note**: The HTML comments in `Bowtie.html` mention "Restored from Penpot components" - find that original file!
 
 ---
 
@@ -159,12 +159,12 @@ Once connected, you can use prompts like:
 - "What fonts are specified in the design?"
 
 ### Code Generation
-- "Update the CSS in prototype.html to match the latest toolbar design in Penpot"
+- "Update the CSS in Bowtie.html to match the latest toolbar design in Penpot"
 - "Generate a new node component based on the Hazard shape from Penpot"
 - "Export the color palette from Penpot and update hfa-ds/tokens.json"
 
 ### Sync & Update
-- "Check if the border-radius values in prototype.html match my Penpot design"
+- "Check if the border-radius values in Bowtie.html match my Penpot design"
 - "Update the shadow styles to match what's in Penpot"
 - "Compare the spacing in my HTML with the Penpot file"
 
@@ -187,7 +187,7 @@ Once connected, you can use prompts like:
 ### Workflow
 1. Make design changes in Penpot
 2. Ask Cursor AI to query the updated design
-3. Generate code updates for `prototype.html`
+3. Generate code updates for `Bowtie.html`
 4. The HTML file stays standalone (no runtime dependencies on Penpot)
 
 ---
@@ -225,7 +225,7 @@ Once connected, you can use prompts like:
 ## Current Repository Status
 
 ✅ Repository is ready for MCP integration:
-- `prototype.html` - Your working Bowtie editor
+- `Bowtie.html` - Your working Bowtie editor
 - [hfa-ds/tokens.json](https://github.com/larswpettersson/hfa-ds/blob/main/tokens.json) - Design tokens from Penpot (canonical repo: hfa-ds)
 - `.git` - Version control configured
 - Comments in HTML confirm Penpot origin

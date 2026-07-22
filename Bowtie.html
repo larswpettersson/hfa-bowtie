@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bowtie Application (penpot5 — state-driven)</title>
+  <title>Bowtie Application</title>
   <!--
     State-driven refactor of prototype4 — in-memory model + render-from-state.
     App logic: scripts/penpot5-app.js
@@ -81,20 +81,18 @@
       font-weight: 600;
     }
 
-    /* Matches Penpot's "Bowtie Application" board: diagram column (with
-       toolbar centered above it) + a narrower legend column, top-aligned. */
-    .app-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      grid-template-rows: auto 1fr;
-      column-gap: 16px;
-      row-gap: 12px;
+    /* Matches Penpot "Bowtie Application": Toolbar sibling above Bowtie example;
+       legend is anchored top-right in the bowtie grid (not a side column). */
+    .bowtie-application {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
     }
 
     .toolbar-wrap {
-      grid-column: 1;
-      grid-row: 1;
-      justify-self: center;
+      display: flex;
+      justify-content: center;
     }
 
     .toolbar {
@@ -130,8 +128,6 @@
     .ul { text-decoration: underline; }
 
     .bowtie-wrap {
-      grid-column: 1;
-      grid-row: 2;
       min-width: 0;
     }
 
@@ -177,8 +173,10 @@
     /* Hazard: Penpot 123×55, border-radius 0 */
     .hazard {
       display: inline-flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 4px;
       min-width: 123px;
       min-height: 55px;
       padding: 4px 8px;
@@ -190,7 +188,20 @@
       z-index: 2;
     }
 
-    .hazard .label { outline: none; padding: 4px; }
+    .hazard .label,
+    .top-event .label {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.2;
+      padding: 0 4px;
+      user-select: none;
+    }
+
+    .hazard .desc-text,
+    .top-event .desc-text {
+      width: 100%;
+      text-align: center;
+    }
 
     .zone--right {
       display: grid;
@@ -256,7 +267,11 @@
     .card:hover,
     .barrier:hover,
     .hazard:hover,
-    .top-event:hover {
+    .top-event:hover,
+    .card.is-keyboard-hover,
+    .barrier.is-keyboard-hover,
+    .hazard.is-keyboard-hover,
+    .top-event.is-keyboard-hover {
       box-shadow: 4px 4px 4px var(--interaction-shadow);
     }
 
@@ -332,8 +347,10 @@
 
     .top-event {
       display: inline-flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 4px;
       min-width: 102px;
       min-height: 57px;
       padding: 12px 16px;
@@ -343,12 +360,10 @@
       text-align: center;
     }
 
-    .top-event .label { outline: none; padding: 4px; }
-
     .legend {
-      grid-column: 2;
-      grid-row: 1;
-      align-self: start;
+      position: absolute;
+      top: 0;
+      right: 0;
       width: 174px;
       padding: 7px 14px;
       border-radius: 8px;
@@ -356,8 +371,14 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
-      position: relative;
-      z-index: 2;
+      z-index: 3;
+      pointer-events: auto;
+      transition: transform 150ms ease, box-shadow 150ms ease;
+    }
+
+    .legend:hover {
+      transform: translateY(-6px);
+      box-shadow: 4px 4px 8px var(--interaction-shadow);
     }
 
     .legend-row {
@@ -416,8 +437,8 @@
       color: #57606a;
     }
 
-    /* Connectors render *behind* barriers/cards/hazard/toolbar/legend/top-event
-       (all of which set position:relative + z-index:2 above). */
+    /* Diagram depth (back → front): connectors (1), components (2), legend (3).
+       Siblings under .bowtie so legend hover never lifts connector lines. */
     .connectors-layer {
       position: absolute;
       inset: 0;
@@ -427,13 +448,22 @@
       overflow: visible;
       z-index: 1;
     }
+
+    .connectors-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body data-theme="light">
   <div class="app">
     <h1 class="app-title">Bowtie Application</h1>
 
-    <div class="app-grid">
+    <div class="bowtie-application">
       <div class="toolbar-wrap">
         <div class="toolbar" role="toolbar" aria-label="Add bowtie elements">
           <button type="button" class="action-btn" data-action="addCause" data-shortcut="c" title="Lägg till Cause (C)">
@@ -454,12 +484,50 @@
           <button type="button" class="action-btn" data-action="setTheme" data-theme-value="dark" data-shortcut="d" title="Dark mode (D)">
             <span class="ul">D</span><span>ark</span>
           </button>
+          <button type="button" class="action-btn" data-action="exportState" title="Export diagram (JSON)">
+            Export
+          </button>
+          <button type="button" class="action-btn" data-action="importState" title="Import diagram (JSON)">
+            Import
+          </button>
+          <input type="file" id="import-state-file" accept=".json,application/json" hidden />
         </div>
       </div>
 
       <div class="bowtie-wrap">
         <div class="bowtie" id="bowtie" aria-label="Bowtie example">
-          <svg class="connectors-layer" aria-hidden="true"></svg>
+          <div class="connectors-layer">
+            <svg class="connectors-svg" aria-hidden="true"></svg>
+          </div>
+          <aside class="legend" aria-label="Legend">
+              <div class="legend-row" data-status="Implemented" data-shortcut="i" title="Sätt status: Implemented (I) — kräver vald barriär">
+                <span class="swatch swatch--implemented"></span><span><span class="ul">I</span>mplemented</span>
+              </div>
+              <div class="legend-row" data-status="Partly Implemented" data-shortcut="p" title="Sätt status: Partly implemented (P) — kräver vald barriär">
+                <span class="swatch swatch--partly"></span><span><span class="ul">P</span>artly implemented</span>
+              </div>
+              <div class="legend-row" data-status="Not Implemented" data-shortcut="n" title="Sätt status: Not implemented (N) — kräver vald barriär">
+                <span class="swatch swatch--not-implemented"></span><span><span class="ul">N</span>ot implemented</span>
+              </div>
+              <div class="legend-row" data-status="To be implemented" data-shortcut="t" title="Sätt status: Temporary (T) — kräver vald barriär">
+                <span class="swatch swatch--temporary"></span><span><span class="ul">T</span>emporary</span>
+              </div>
+              <div class="legend-row" data-status="Unknown" data-shortcut="u" title="Sätt status: Unknown (U) — kräver vald barriär">
+                <span class="swatch swatch--unknown"></span><span><span class="ul">U</span>nknown</span>
+              </div>
+              <div class="legend-row legend-row--empty" aria-hidden="true">
+                <span class="swatch swatch--empty"></span>
+              </div>
+              <div class="legend-row" data-strength="Normal" data-shortcut="l" title="Sätt strength: Normal (L) — kräver vald barriär">
+                <span class="swatch swatch--normal"></span><span>Norma<span class="ul">l</span></span>
+              </div>
+              <div class="legend-row" data-strength="Strong" data-shortcut="s" title="Sätt strength: Strong (S) — kräver vald barriär">
+                <span class="swatch swatch--strong"></span><span><span class="ul">S</span>trong</span>
+              </div>
+              <div class="legend-row" data-strength="Weak" data-shortcut="w" title="Sätt strength: Weak (W) — kräver vald barriär">
+                <span class="swatch swatch--weak"></span><span><span class="ul">W</span>eak</span>
+              </div>
+          </aside>
           <section class="zone zone--left" id="zone-left" aria-label="Cause and Preventive Barriers">
             <article class="card" id="c-C1" data-kind="cause" data-row="1" data-col="1">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-C1" data-target="id-TE">C1</div>
@@ -493,10 +561,14 @@ lines long</p>
           <section class="zone zone--center" id="zone-center" aria-label="Hazard and Top Event">
             <div class="center-stack">
               <div class="hazard">
-                <div class="label id-tag" contenteditable="true" id="id-HZ">Hazard</div>
+                <span class="label">Hazard</span>
+                <span id="id-HZ" hidden tabindex="-1" aria-hidden="true"></span>
+                <p class="desc-text" contenteditable="true" data-role="description"></p>
               </div>
               <div class="top-event">
-                <div class="label id-tag" contenteditable="true" id="id-TE">Top Event</div>
+                <span class="label">Top Event</span>
+                <span id="id-TE" hidden tabindex="-1" aria-hidden="true"></span>
+                <p class="desc-text" contenteditable="true" data-role="description"></p>
               </div>
             </div>
           </section>
@@ -524,42 +596,20 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
         </div>
 
         <p class="hint">
-          Kortkommandon: <strong>C</strong> Cause · <strong>B</strong> Preventive Barrier ·
-          <strong>R</strong> Reactive Barrier · <strong>Q</strong> Consequence ·
-          <strong>L</strong> Light · <strong>D</strong> Dark. Inaktiva medan du redigerar text.
-          (penpot5 — state-driven; prototype4 unchanged)
+          <strong>Shortcuts</strong> —
+          Add: <strong>C</strong> Cause · <strong>B</strong> Preventive · <strong>R</strong> Reactive ·
+          <strong>Q</strong> Consequence ·
+          Theme: <strong>L</strong> Light · <strong>D</strong> Dark ·
+          Edit: <strong>Enter</strong> edit · <strong>Cmd/Ctrl+Enter</strong> select/apply ·
+          <strong>Esc</strong> undo · <strong>Shift+Enter</strong> new line ·
+          Tab/Shift+Tab navigate (no apply while selected) ·
+          Navigate: arrow keys (hover preview; select with Cmd/Ctrl+Enter) · Alt+↑↓ move row · Shift+↑↓ extend · Cmd/Ctrl+click multi-select ·
+          Backspace delete ·
+          Link mode: ←→ move column · ↑↓ browse links · 1–9 toggle link ·
+          <strong>Enter</strong> apply · <strong>Esc</strong> undo · I/P/N/T/U status · S/L/W strength.
+          Toolbar and legend keys are inactive while editing text.
         </p>
       </div>
-
-      <aside class="legend" aria-label="Legend">
-        <div class="legend-row" data-status="Implemented" data-shortcut="i" title="Sätt status: Implemented (I) — kräver vald barriär">
-          <span class="swatch swatch--implemented"></span><span><span class="ul">I</span>mplemented</span>
-        </div>
-        <div class="legend-row" data-status="Partly Implemented" data-shortcut="p" title="Sätt status: Partly implemented (P) — kräver vald barriär">
-          <span class="swatch swatch--partly"></span><span><span class="ul">P</span>artly implemented</span>
-        </div>
-        <div class="legend-row" data-status="Not Implemented" data-shortcut="n" title="Sätt status: Not implemented (N) — kräver vald barriär">
-          <span class="swatch swatch--not-implemented"></span><span><span class="ul">N</span>ot implemented</span>
-        </div>
-        <div class="legend-row" data-status="To be implemented" data-shortcut="t" title="Sätt status: Temporary (T) — kräver vald barriär">
-          <span class="swatch swatch--temporary"></span><span><span class="ul">T</span>emporary</span>
-        </div>
-        <div class="legend-row" data-status="Unknown" data-shortcut="u" title="Sätt status: Unknown (U) — kräver vald barriär">
-          <span class="swatch swatch--unknown"></span><span><span class="ul">U</span>nknown</span>
-        </div>
-        <div class="legend-row legend-row--empty" aria-hidden="true">
-          <span class="swatch swatch--empty"></span>
-        </div>
-        <div class="legend-row" data-strength="Strong" data-shortcut="s" title="Sätt strength: Strong (S) — kräver vald barriär">
-          <span class="swatch swatch--strong"></span><span><span class="ul">S</span>trong</span>
-        </div>
-        <div class="legend-row" data-strength="Normal" data-shortcut="l" title="Sätt strength: Normal (L) — kräver vald barriär">
-          <span class="swatch swatch--normal"></span><span>Norma<span class="ul">l</span></span>
-        </div>
-        <div class="legend-row" data-strength="Weak" data-shortcut="w" title="Sätt strength: Weak (W) — kräver vald barriär">
-          <span class="swatch swatch--weak"></span><span><span class="ul">W</span>eak</span>
-        </div>
-      </aside>
     </div>
   </div>
   <script src="scripts/penpot5-app.js"></script>

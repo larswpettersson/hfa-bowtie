@@ -3,11 +3,16 @@
   const zoneLeft = document.getElementById("zone-left");
   const zoneCenter = document.getElementById("zone-center");
   const zoneRight = document.getElementById("zone-right");
-  const connectorsLayer = bowtie.querySelector(".connectors-layer");
+  const connectorsSvg = bowtie.querySelector(".connectors-svg");
 
   let state = null;
   const ui = { activeBarrierId: null, selectedIds: new Set(), selectionAnchorId: null };
   let selectedFocusDomId = null;
+  let editSession = null;
+  let blurNavigation = null; // 'tab' | 'apply' | 'cancel'
+  let linkModeSnapshot = null; // { barrierId, protects, everLinked, barrierCols }
+  let selectionLayoutSnapshot = null; // { side, rows }
+  let selectionLayoutDirty = false;
 
   const connectors = [];
 
@@ -246,8 +251,12 @@
       ? Math.max(...rightBarriers.map((b) => b.col))
       : 0;
 
-    const hazardEl = document.querySelector(".hazard .id-tag, .hazard [contenteditable]");
-    const topEventEl = document.querySelector(".top-event .id-tag, .top-event [contenteditable]");
+    const hazardRoot = document.querySelector(".hazard");
+    const topEventRoot = document.querySelector(".top-event");
+    const hazardDesc = hazardRoot?.querySelector('[data-role="description"]');
+    const topEventDesc = topEventRoot?.querySelector('[data-role="description"]');
+    const hazardIdEl = hazardRoot?.querySelector("[id^='id-']") || document.getElementById("id-HZ");
+    const topEventIdEl = topEventRoot?.querySelector("[id^='id-']") || document.getElementById("id-TE");
 
     return {
       meta: {
@@ -260,12 +269,12 @@
         },
       },
       hazard: {
-        id: hazardEl?.id?.replace(/^id-/, "") || "HZ",
-        label: hazardEl ? readEditableText(hazardEl) : "Hazard",
+        id: hazardIdEl?.id?.replace(/^id-/, "") || "HZ",
+        label: hazardDesc ? readEditableText(hazardDesc) : "",
       },
       topEvent: {
-        id: topEventEl?.id?.replace(/^id-/, "") || "TE",
-        label: topEventEl ? readEditableText(topEventEl) : "Top Event",
+        id: topEventIdEl?.id?.replace(/^id-/, "") || "TE",
+        label: topEventDesc ? readEditableText(topEventDesc) : "",
       },
       left: {
         rows: Math.max(leftRows, 1),
@@ -283,6 +292,288 @@
   }
 
   // ---------- Validation ----------
+
+  // Left grid: col 1 = causes; preventive barriers use col 2 .. (1 + barrierCols).
+  // Right grid: reactive barriers use col 1 .. barrierCols; consequences use barrierCols + 1.
+  // Common LLM mistake: preventive barrier at col 1 (Gemini traffic-event fixture) — it lands in
+  // the causes column, renders disconnected at the far left, and skips connector routing.
+
+  function validateImportState(s) {
+    const errors = [];
+    const warnings = [];
+
+    const pushError = (path, message, fix) => {
+      errors.push({ path, message, fix });
+    };
+    const pushWarning = (path, message, fix) => {
+      warnings.push({ path, message, fix });
+    };
+
+    if (!s.hazard?.id) pushError("hazard.id", "Hazard id is required.", 'Set hazard.id (e.g. "HZ").');
+    if (!s.topEvent?.id) {
+      pushError("topEvent.id", "Top event id is required.", 'Set topEvent.id (e.g. "TE").');
+    }
+
+    const topEventIdTag = s.topEvent?.id ? `id-${s.topEvent.id}` : null;
+
+    s.left.causes.forEach((c, index) => {
+      const path = `left.causes[${index}]`;
+      if (!c.id) pushError(`${path}.id`, "Cause missing id.", "Add a unique id such as C1.");
+      if (c.row < 1 || c.row > s.left.rows) {
+        pushError(
+          `${path} (${c.id || "?"}).row`,
+          `Row ${c.row} is outside left.rows (1..${s.left.rows}).`,
+          `Set row between 1 and ${s.left.rows}, or increase left.rows.`
+        );
+      }
+      if (topEventIdTag && c.connectorTarget && c.connectorTarget !== topEventIdTag) {
+        pushWarning(
+          `${path} (${c.id}).connectorTarget`,
+          `connectorTarget is "${c.connectorTarget}" but top event is "${topEventIdTag}".`,
+          `Set connectorTarget to "${topEventIdTag}".`
+        );
+      }
+    });
+
+    s.right.consequences.forEach((c, index) => {
+      const path = `right.consequences[${index}]`;
+      if (!c.id) pushError(`${path}.id`, "Consequence missing id.", "Add a unique id such as K1.");
+      if (c.row < 1 || c.row > s.right.rows) {
+        pushError(
+          `${path} (${c.id || "?"}).row`,
+          `Row ${c.row} is outside right.rows (1..${s.right.rows}).`,
+          `Set row between 1 and ${s.right.rows}, or increase right.rows.`
+        );
+      }
+    });
+
+    const leafIdTagIds = new Set([
+      ...s.left.causes.map((c) => c.idTagId),
+      ...s.right.consequences.map((c) => c.idTagId),
+    ]);
+
+    const leftMaxCol = s.left.barrierCols + 1;
+    const seenLeftBarrierIds = new Map();
+    s.left.barriers.forEach((b, index) => {
+      const path = `left.barriers[${index}]`;
+      const label = b.id || b.barrierId || "?";
+
+      if (!b.barrierId) {
+        pushError(`${path}.barrierId`, "Preventive barrier missing barrierId.", 'Add barrierId (e.g. "p1").');
+      } else if (seenLeftBarrierIds.has(b.barrierId)) {
+        pushError(
+          `${path}.barrierId`,
+          `Duplicate barrierId "${b.barrierId}" on the left side (also at index ${seenLeftBarrierIds.get(b.barrierId)}).`,
+          "Use one barrier object per barrierId; merge authoredSegments instead of splitting."
+        );
+      } else {
+        seenLeftBarrierIds.set(b.barrierId, index);
+      }
+
+      if (b.col < 2) {
+        pushError(
+          `${path} (${label}).col`,
+          `col=${b.col} is invalid for preventive barrier ${label}: column 1 is reserved for causes.`,
+          `Set ${label}.col to 2 for the innermost preventive barrier, 3 for the next column toward the top event, etc. Example: P1 col=2 with protects ["id-C1","id-C2"]; shift any barrier already at col>=2 one column right.`
+        );
+      } else if (b.col > leftMaxCol) {
+        pushError(
+          `${path} (${label}).col`,
+          `col=${b.col} exceeds the left grid (max ${leftMaxCol} when left.barrierCols=${s.left.barrierCols}).`,
+          `Increase left.barrierCols to at least ${b.col - 1}, or reduce ${label}.col.`
+        );
+      }
+
+      if (b.everLinked && b.protects.length === 0) {
+        pushError(
+          `${path} (${label}).protects`,
+          `${label} has everLinked=true but protects is empty — it will render with no cause links.`,
+          `Add cause idTagIds to protects (e.g. ["id-C1","id-C2"]) matching linked causes.`
+        );
+      } else if (!b.everLinked && b.protects.length === 0) {
+        pushWarning(
+          `${path} (${label}).protects`,
+          `${label} has no protects links and everLinked=false.`,
+          "Link the barrier to at least one cause via protects, or set everLinked=true once linked."
+        );
+      }
+
+      b.protects.forEach((idTagId) => {
+        if (!leafIdTagIds.has(idTagId)) {
+          pushError(
+            `${path} (${label}).protects`,
+            `Unknown idTagId "${idTagId}" in protects.`,
+            `Use idTagId values from left.causes (e.g. id-C1), not domId values like c-C1.`
+          );
+        }
+      });
+
+      (b.authoredSegments || []).forEach((seg, segIndex) => {
+        const segPath = `${path}.authoredSegments[${segIndex}]`;
+        if (seg.row < 1 || seg.row > s.left.rows) {
+          pushError(
+            `${segPath}.row`,
+            `Segment row ${seg.row} is outside left.rows (1..${s.left.rows}).`,
+            `Set row between 1 and ${s.left.rows} for barrier ${label}.`
+          );
+        }
+        if (seg.rowSpan < 1 || seg.row + seg.rowSpan - 1 > s.left.rows) {
+          pushError(
+            `${segPath}.rowSpan`,
+            `Segment rowSpan ${seg.rowSpan} at row ${seg.row} exceeds left.rows (${s.left.rows}).`,
+            `Reduce rowSpan or move the segment up so row + rowSpan - 1 <= ${s.left.rows}.`
+          );
+        }
+      });
+    });
+
+    const seenRightBarrierIds = new Map();
+    s.right.barriers.forEach((b, index) => {
+      const path = `right.barriers[${index}]`;
+      const label = b.id || b.barrierId || "?";
+
+      if (!b.barrierId) {
+        pushError(`${path}.barrierId`, "Reactive barrier missing barrierId.", 'Add barrierId (e.g. "r1").');
+      } else if (seenRightBarrierIds.has(b.barrierId)) {
+        pushError(
+          `${path}.barrierId`,
+          `Duplicate barrierId "${b.barrierId}" on the right side (also at index ${seenRightBarrierIds.get(b.barrierId)}).`,
+          "Use one barrier object per barrierId; merge authoredSegments instead of splitting."
+        );
+      } else {
+        seenRightBarrierIds.set(b.barrierId, index);
+      }
+
+      if (b.col < 1 || b.col > s.right.barrierCols) {
+        pushError(
+          `${path} (${label}).col`,
+          `col=${b.col} is outside the reactive barrier range 1..${s.right.barrierCols}.`,
+          `Set ${label}.col between 1 and ${s.right.barrierCols} (consequences occupy col ${s.right.barrierCols + 1}).`
+        );
+      }
+
+      if (b.everLinked && b.protects.length === 0) {
+        pushError(
+          `${path} (${label}).protects`,
+          `${label} has everLinked=true but protects is empty.`,
+          `Add consequence idTagIds to protects (e.g. ["id-K1"]).`
+        );
+      }
+
+      b.protects.forEach((idTagId) => {
+        if (!leafIdTagIds.has(idTagId)) {
+          pushError(
+            `${path} (${label}).protects`,
+            `Unknown idTagId "${idTagId}" in protects.`,
+            `Use idTagId values from right.consequences (e.g. id-K1).`
+          );
+        }
+      });
+
+      (b.authoredSegments || []).forEach((seg, segIndex) => {
+        const segPath = `${path}.authoredSegments[${segIndex}]`;
+        if (seg.row < 1 || seg.row > s.right.rows) {
+          pushError(
+            `${segPath}.row`,
+            `Segment row ${seg.row} is outside right.rows (1..${s.right.rows}).`,
+            `Set row between 1 and ${s.right.rows} for barrier ${label}.`
+          );
+        }
+        if (seg.rowSpan < 1 || seg.row + seg.rowSpan - 1 > s.right.rows) {
+          pushError(
+            `${segPath}.rowSpan`,
+            `Segment rowSpan ${seg.rowSpan} at row ${seg.row} exceeds right.rows (${s.right.rows}).`,
+            `Reduce rowSpan or move the segment up.`
+          );
+        }
+      });
+    });
+
+    const leftCols = s.left.barriers.map((b) => b.col);
+    leftCols.forEach((col, index) => {
+      if (leftCols.indexOf(col) !== index) {
+        const label = s.left.barriers[index].id || s.left.barriers[index].barrierId;
+        pushWarning(
+          `left.barriers[${index}] (${label}).col`,
+          `Multiple preventive barriers share col=${col}.`,
+          "Assign unique columns: innermost barrier col=2, next col=3, etc."
+        );
+      }
+    });
+
+    const rightCols = s.right.barriers.map((b) => b.col);
+    rightCols.forEach((col, index) => {
+      if (rightCols.indexOf(col) !== index) {
+        const label = s.right.barriers[index].id || s.right.barriers[index].barrierId;
+        pushWarning(
+          `right.barriers[${index}] (${label}).col`,
+          `Multiple reactive barriers share col=${col}.`,
+          "Assign unique columns between 1 and right.barrierCols."
+        );
+      }
+    });
+
+    const requiredLeftBarrierCols = s.left.barriers.length
+      ? Math.max(...s.left.barriers.map((b) => b.col)) - 1
+      : 0;
+    if (Number(s.left.barrierCols) < requiredLeftBarrierCols) {
+      pushWarning(
+        "left.barrierCols",
+        `left.barrierCols=${s.left.barrierCols} is smaller than required ${requiredLeftBarrierCols}.`,
+        `Set left.barrierCols to ${requiredLeftBarrierCols}.`
+      );
+    }
+
+    const requiredRightBarrierCols = s.right.barriers.length
+      ? Math.max(...s.right.barriers.map((b) => b.col))
+      : 0;
+    if (Number(s.right.barrierCols) < requiredRightBarrierCols) {
+      pushWarning(
+        "right.barrierCols",
+        `right.barrierCols=${s.right.barrierCols} is smaller than required ${requiredRightBarrierCols}.`,
+        `Set right.barrierCols to ${requiredRightBarrierCols}.`
+      );
+    }
+
+    const seqChecks = [
+      ["cause", "C", s.left.causes, s.meta?.seq?.cause],
+      ["consequence", "K", s.right.consequences, s.meta?.seq?.consequence],
+      ["preventiveBarrier", "P", s.left.barriers, s.meta?.seq?.preventiveBarrier],
+      ["reactiveBarrier", "R", s.right.barriers, s.meta?.seq?.reactiveBarrier],
+    ];
+    seqChecks.forEach(([seqKey, prefix, items, seqValue]) => {
+      const expected = maxSeqFromIds(prefix, items);
+      if (seqValue != null && Number(seqValue) !== expected) {
+        pushWarning(
+          `meta.seq.${seqKey}`,
+          `meta.seq.${seqKey}=${seqValue} but highest ${prefix} id is ${prefix}${expected}.`,
+          `Set meta.seq.${seqKey} to ${expected}.`
+        );
+      }
+    });
+
+    return { errors, warnings };
+  }
+
+  function formatImportValidationMessage(errors, warnings) {
+    const lines = [];
+    if (errors.length) {
+      lines.push(`Import blocked (${errors.length} error${errors.length === 1 ? "" : "s"}):`);
+      errors.forEach((item, index) => {
+        lines.push(`${index + 1}. [${item.path}] ${item.message}`);
+        if (item.fix) lines.push(`   Fix: ${item.fix}`);
+      });
+    }
+    if (warnings.length) {
+      if (lines.length) lines.push("");
+      lines.push(`${warnings.length} warning${warnings.length === 1 ? "" : "s"}:`);
+      warnings.forEach((item, index) => {
+        lines.push(`${index + 1}. [${item.path}] ${item.message}`);
+        if (item.fix) lines.push(`   Fix: ${item.fix}`);
+      });
+    }
+    return lines.join("\n");
+  }
 
   function validateState(s) {
     const leafIdTagIds = new Set([
@@ -323,6 +614,153 @@
     if (!centerIds.has(`id-${s.topEvent.id}`)) {
       console.warn(`TopEvent idTag id-${s.topEvent.id} may be missing from DOM`);
     }
+  }
+
+  // ---------- Persist (JSON import/export) ----------
+
+  const DIAGRAM_VERSION = 1;
+
+  function serializeState(source = state) {
+    return {
+      version: DIAGRAM_VERSION,
+      meta: JSON.parse(JSON.stringify(source.meta)),
+      hazard: JSON.parse(JSON.stringify(source.hazard)),
+      topEvent: JSON.parse(JSON.stringify(source.topEvent)),
+      left: JSON.parse(JSON.stringify(source.left)),
+      right: JSON.parse(JSON.stringify(source.right)),
+    };
+  }
+
+  function normalizeImportedState(raw) {
+    const s = JSON.parse(JSON.stringify(raw));
+    delete s.version;
+
+    s.meta = s.meta || {};
+    s.meta.theme = s.meta.theme === "dark" ? "dark" : "light";
+    s.meta.seq = s.meta.seq || {};
+    s.hazard = s.hazard || { id: "HZ", label: "Hazard" };
+    s.topEvent = s.topEvent || { id: "TE", label: "Top Event" };
+    s.left = s.left || { rows: 1, barrierCols: 0, causes: [], barriers: [] };
+    s.right = s.right || { rows: 1, barrierCols: 0, consequences: [], barriers: [] };
+    s.left.causes = s.left.causes || [];
+    s.left.barriers = s.left.barriers || [];
+    s.right.consequences = s.right.consequences || [];
+    s.right.barriers = s.right.barriers || [];
+
+    const normalizeCard = (card) => {
+      if (!card.id) throw new Error("Card missing id");
+      card.domId = card.domId || `c-${card.id}`;
+      card.idTagId = card.idTagId || `id-${card.id}`;
+      card.description = card.description ?? "";
+      card.row = Number(card.row) || 1;
+      card.connectorTarget = card.connectorTarget || `id-${s.topEvent.id}`;
+    };
+
+    s.left.causes.forEach(normalizeCard);
+    s.right.consequences.forEach(normalizeCard);
+
+    s.left.rows = Math.max(Number(s.left.rows) || 1, ...s.left.causes.map((c) => c.row), 1);
+    s.right.rows = Math.max(Number(s.right.rows) || 1, ...s.right.consequences.map((c) => c.row), 1);
+
+    const normalizeBarrier = (barrier, leaves, side) => {
+      if (!barrier.barrierId) throw new Error("Barrier missing barrierId");
+      barrier.id = barrier.id || String(barrier.barrierId).toUpperCase();
+      barrier.description = barrier.description ?? "";
+      barrier.col = Number(barrier.col) || (side === "left" ? 2 : 1);
+      barrier.strength = barrier.strength || "Normal";
+      barrier.status = barrier.status || "Unknown";
+      barrier.protects = Array.isArray(barrier.protects) ? [...barrier.protects] : [];
+      barrier.everLinked = Boolean(barrier.everLinked || barrier.protects.length);
+      barrier.authoredSegments = computeBarrierSegments(barrier, leaves);
+    };
+
+    s.left.barriers.forEach((b) => normalizeBarrier(b, s.left.causes, "left"));
+    s.right.barriers.forEach((b) => normalizeBarrier(b, s.right.consequences, "right"));
+
+    s.left.barrierCols = Math.max(
+      Number(s.left.barrierCols) || 0,
+      s.left.barriers.length ? Math.max(...s.left.barriers.map((b) => b.col)) - 1 : 0
+    );
+    s.right.barrierCols = Math.max(
+      Number(s.right.barrierCols) || 0,
+      s.right.barriers.length ? Math.max(...s.right.barriers.map((b) => b.col)) : 0
+    );
+
+    if (!s.meta.seq.cause) s.meta.seq.cause = maxSeqFromIds("C", s.left.causes);
+    if (!s.meta.seq.consequence) s.meta.seq.consequence = maxSeqFromIds("K", s.right.consequences);
+    if (!s.meta.seq.preventiveBarrier) {
+      s.meta.seq.preventiveBarrier = maxSeqFromIds("P", s.left.barriers);
+    }
+    if (!s.meta.seq.reactiveBarrier) s.meta.seq.reactiveBarrier = maxSeqFromIds("R", s.right.barriers);
+
+    return s;
+  }
+
+  function deserializeState(input) {
+    const parsed = typeof input === "string" ? JSON.parse(input) : input;
+    if (!parsed || typeof parsed !== "object") {
+      throw new Error("Invalid diagram JSON");
+    }
+    if (!parsed.meta || !parsed.hazard || !parsed.topEvent || !parsed.left || !parsed.right) {
+      throw new Error("Diagram JSON missing required fields");
+    }
+    return normalizeImportedState(parsed);
+  }
+
+  function applyState(nextState) {
+    clearLinkModeUI(ui.activeBarrierId);
+    editSession = null;
+    clearComponentSelection();
+
+    state = nextState;
+    validateState(state);
+    render(state);
+    buildConnectors();
+    updateTabOrder();
+    fitAllBarrierDescriptions();
+  }
+
+  function loadState(input) {
+    applyState(deserializeState(input));
+  }
+
+  function exportStateToFile() {
+    const json = JSON.stringify(serializeState(), null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "bowtie.json";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function importStateFromFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const normalized = deserializeState(reader.result);
+        const { errors, warnings } = validateImportState(normalized);
+        if (errors.length) {
+          window.alert(formatImportValidationMessage(errors, warnings));
+          return;
+        }
+        if (warnings.length) {
+          const proceed = window.confirm(
+            `${formatImportValidationMessage([], warnings)}\n\nImport anyway?`
+          );
+          if (!proceed) return;
+        }
+        applyState(normalized);
+      } catch (err) {
+        console.error(err);
+        window.alert(`Import failed: ${err.message}`);
+      }
+    };
+    reader.readAsText(file);
   }
 
   // ---------- State lookups ----------
@@ -377,6 +815,324 @@
 
   // ---------- DOM creation ----------
 
+  function isEditContextSelected(el) {
+    const component = el.closest(".card, .barrier, .hazard, .top-event");
+    if (!component) return false;
+    const domId = domIdForComponent(component);
+    if (ui.selectedIds.has(domId)) return true;
+    if (selectedFocusDomId === domId) return true;
+    if (component.classList.contains("barrier") && ui.activeBarrierId === component.dataset.barrierId) {
+      return true;
+    }
+    return false;
+  }
+
+  function startEditSession(el, getValue, setValue) {
+    editSession = { el, originalValue: getValue(), getValue, setValue };
+  }
+
+  function applyEditSession() {
+    if (!editSession) return;
+    const { el, setValue } = editSession;
+    const value = readEditableText(el);
+    if (el.classList.contains("desc-text")) {
+      el.dataset.full = value;
+    }
+    setValue(value);
+    editSession = null;
+    commit(() => {});
+    if (el.classList.contains("desc-text")) {
+      applyDescriptionTruncation(el, value);
+      fitBarrierDescription(el, { respectFocus: false });
+    }
+    positionAllConnectors();
+  }
+
+  function cancelEditSession() {
+    if (!editSession) return;
+    const { el, originalValue, setValue } = editSession;
+    setValue(originalValue);
+    if (el.classList.contains("desc-text")) {
+      el.dataset.full = originalValue;
+      if (el === document.activeElement) {
+        writeEditableText(el, originalValue);
+      } else {
+        applyDescriptionTruncation(el, originalValue);
+        fitBarrierDescription(el, { respectFocus: false });
+      }
+    } else {
+      writeEditableText(el, originalValue);
+    }
+    editSession = null;
+    commit(() => {});
+    positionAllConnectors();
+  }
+
+  function handleEditBlur(el) {
+    if (!editSession || editSession.el !== el) return;
+    if (blurNavigation === "cancel" || blurNavigation === "apply") {
+      blurNavigation = null;
+      return;
+    }
+
+    if (blurNavigation === "tab" && isEditContextSelected(el)) {
+      const related = document.activeElement;
+      const leaving = el.closest(".card, .barrier, .hazard, .top-event");
+      const entering = related?.closest?.(".card, .barrier, .hazard, .top-event");
+      const tabWithinSameComponent =
+        leaving &&
+        entering &&
+        domIdForComponent(leaving) === domIdForComponent(entering);
+
+      if (tabWithinSameComponent) {
+        const value = readEditableText(el);
+        if (el.classList.contains("desc-text")) el.dataset.full = value;
+        editSession.setValue(value);
+        editSession = null;
+      } else {
+        cancelEditSession();
+      }
+      blurNavigation = null;
+      return;
+    }
+
+    applyEditSession();
+    blurNavigation = null;
+  }
+
+  function finishEditingAfterApply(active) {
+    const component = active.closest(".card, .barrier, .hazard, .top-event");
+    if (!component) return;
+    if (active.dataset.role === "id" && component.querySelector('[data-role="description"]')) {
+      beginFieldEdit(component, "description");
+    } else {
+      selectComponent(component);
+    }
+  }
+
+  function getKeyboardHoverEl() {
+    return document.querySelector(
+      ".card.is-keyboard-hover, .barrier.is-keyboard-hover, .hazard.is-keyboard-hover, .top-event.is-keyboard-hover"
+    );
+  }
+
+  function isComponentSelected() {
+    return !!(ui.activeBarrierId || selectedFocusDomId || ui.selectedIds.size);
+  }
+
+  function clearKeyboardHover() {
+    document.querySelectorAll(".is-keyboard-hover").forEach((el) => {
+      el.classList.remove("is-keyboard-hover");
+    });
+  }
+
+  function beginFieldEdit(componentEl, role = "id") {
+    if (!componentEl) return;
+    const field = componentEl.querySelector(`[data-role="${role}"]`);
+    if (!field) return;
+    clearKeyboardHover();
+    componentEl.classList.remove("is-selected");
+    field.focus();
+  }
+
+  function focusBarrierIdField(barrierId) {
+    const seg = getBarrierSegmentEls(barrierId)[0];
+    if (seg) beginFieldEdit(seg, "id");
+  }
+
+  function getSelectedComponentEl() {
+    if (ui.activeBarrierId) return getBarrierSegmentEls(ui.activeBarrierId)[0] || null;
+    if (selectedFocusDomId === "hazard") return document.querySelector(".hazard");
+    if (selectedFocusDomId === "top-event") return document.querySelector(".top-event");
+    if (selectedFocusDomId) return document.getElementById(selectedFocusDomId);
+    return null;
+  }
+
+  function getCausesInRowOrder() {
+    return Array.from(zoneLeft.querySelectorAll('.card[data-kind="cause"]')).sort(
+      (a, b) => Number(a.dataset.row) - Number(b.dataset.row)
+    );
+  }
+
+  function getConsequencesInRowOrder() {
+    return Array.from(zoneRight.querySelectorAll('.card[data-kind="consequence"]')).sort(
+      (a, b) => Number(a.dataset.row) - Number(b.dataset.row)
+    );
+  }
+
+  function getCurrentNavComponentEl() {
+    const fromFocus = document.activeElement?.closest(".card, .barrier, .hazard, .top-event");
+    if (fromFocus && !document.activeElement?.isContentEditable) return fromFocus;
+    const hovered = getKeyboardHoverEl();
+    if (hovered) return hovered;
+    return getSelectedComponentEl();
+  }
+
+  function getComponentNavKind(el) {
+    if (!el) return null;
+    if (el.classList.contains("hazard")) return "hazard";
+    if (el.classList.contains("top-event")) return "top-event";
+    if (el.classList.contains("card")) {
+      return el.dataset.kind === "cause" ? "cause" : "consequence";
+    }
+    if (el.classList.contains("barrier")) {
+      return el.closest("#zone-left") ? "preventiveBarrier" : "reactiveBarrier";
+    }
+    return null;
+  }
+
+  function barrierNavIndex(barriers, el) {
+    const barrierId = el.dataset.barrierId;
+    return barriers.findIndex((seg) => seg.dataset.barrierId === barrierId);
+  }
+
+  function cardNavIndex(cards, el) {
+    return cards.findIndex((card) => card.id === el.id);
+  }
+
+  function setKeyboardNavTarget(el, { select = isComponentSelected() } = {}) {
+    clearKeyboardHover();
+    if (!el) return;
+    if (select) {
+      if (el.classList.contains("barrier")) {
+        enterLinkMode(el.dataset.barrierId);
+      } else {
+        selectComponent(el);
+      }
+    }
+    el.classList.add("is-keyboard-hover");
+  }
+
+  function navigateComponents(key) {
+    const hoverOnly = { select: false };
+    const causes = getCausesInRowOrder();
+    const consequences = getConsequencesInRowOrder();
+    const preventiveBarriers = firstBarrierSegmentsInColumnOrder(zoneLeft);
+    const reactiveBarriers = firstBarrierSegmentsInColumnOrder(zoneRight);
+    const hazard = document.querySelector(".hazard");
+    const topEvent = document.querySelector(".top-event");
+
+    const current = getCurrentNavComponentEl();
+    if (!current) {
+      if (causes.length) setKeyboardNavTarget(causes[0], hoverOnly);
+      else if (preventiveBarriers.length) setKeyboardNavTarget(preventiveBarriers[0], hoverOnly);
+      else if (hazard) setKeyboardNavTarget(hazard, hoverOnly);
+      else if (topEvent) setKeyboardNavTarget(topEvent, hoverOnly);
+      else if (reactiveBarriers.length) setKeyboardNavTarget(reactiveBarriers[0], hoverOnly);
+      else if (consequences.length) setKeyboardNavTarget(consequences[0], hoverOnly);
+      return;
+    }
+
+    const kind = getComponentNavKind(current);
+    let next = null;
+
+    if (kind === "cause") {
+      const index = cardNavIndex(causes, current);
+      if (key === "ArrowUp" && index > 0) next = causes[index - 1];
+      else if (key === "ArrowDown" && index >= 0 && index < causes.length - 1) next = causes[index + 1];
+      else if (key === "ArrowRight") {
+        next = preventiveBarriers[0] || topEvent || hazard;
+      }
+    } else if (kind === "preventiveBarrier") {
+      const index = barrierNavIndex(preventiveBarriers, current);
+      if (key === "ArrowLeft") {
+        next = index > 0 ? preventiveBarriers[index - 1] : causes[0] || null;
+      } else if (key === "ArrowRight") {
+        next =
+          index >= 0 && index < preventiveBarriers.length - 1
+            ? preventiveBarriers[index + 1]
+            : topEvent || hazard;
+      }
+    } else if (kind === "hazard") {
+      if (key === "ArrowLeft") {
+        next = preventiveBarriers[preventiveBarriers.length - 1] || causes[causes.length - 1] || null;
+      } else if (key === "ArrowRight") {
+        next = topEvent;
+      }
+    } else if (kind === "top-event") {
+      if (key === "ArrowLeft") {
+        next = preventiveBarriers[preventiveBarriers.length - 1] || causes[causes.length - 1] || hazard;
+      } else if (key === "ArrowRight") {
+        next = reactiveBarriers[0] || consequences[0] || null;
+      }
+    } else if (kind === "reactiveBarrier") {
+      const index = barrierNavIndex(reactiveBarriers, current);
+      if (key === "ArrowLeft") {
+        next = index > 0 ? reactiveBarriers[index - 1] : topEvent || hazard;
+      } else if (key === "ArrowRight") {
+        next =
+          index >= 0 && index < reactiveBarriers.length - 1
+            ? reactiveBarriers[index + 1]
+            : consequences[0] || null;
+      }
+    } else if (kind === "consequence") {
+      const index = cardNavIndex(consequences, current);
+      if (key === "ArrowUp" && index > 0) next = consequences[index - 1];
+      else if (key === "ArrowDown" && index >= 0 && index < consequences.length - 1) {
+        next = consequences[index + 1];
+      } else if (key === "ArrowLeft") {
+        next = reactiveBarriers[reactiveBarriers.length - 1] || topEvent || hazard;
+      }
+    }
+
+    if (next) setKeyboardNavTarget(next, hoverOnly);
+  }
+
+  function getLinkTargetCardEls() {
+    return getLeafCardsInRowOrder(ui.activeBarrierId)
+      .map((card) => document.getElementById(card.domId))
+      .filter(Boolean);
+  }
+
+  function navigateLinkTargets(direction) {
+    const cards = getLinkTargetCardEls();
+    if (!cards.length) return;
+
+    let current = cards.find((card) => card.classList.contains("is-keyboard-hover"));
+    if (!current) {
+      current = cards.find(
+        (card) => card.classList.contains("is-selected") && !card.classList.contains("is-unaffected")
+      );
+    }
+    let index = current ? cards.indexOf(current) : -1;
+    index = Math.max(0, Math.min(cards.length - 1, index + direction));
+
+    cards.forEach((card) => card.classList.remove("is-keyboard-hover"));
+    cards[index].classList.add("is-keyboard-hover");
+  }
+
+  function handleEnterOnComponent(evt) {
+    if (evt.key !== "Enter" || evt.shiftKey) return false;
+
+    if (ui.activeBarrierId) {
+      const barrierId = ui.activeBarrierId;
+      applyLinkMode();
+      focusBarrierIdField(barrierId);
+      evt.preventDefault();
+      return true;
+    }
+
+    const el = getKeyboardHoverEl() || getSelectedComponentEl();
+    if (!el) return false;
+
+    evt.preventDefault();
+
+    if (evt.metaKey || evt.ctrlKey) {
+      if (el.classList.contains("barrier")) {
+        enterLinkMode(el.dataset.barrierId);
+      } else {
+        selectComponent(el);
+      }
+      return true;
+    }
+
+    beginFieldEdit(
+      el,
+      el.classList.contains("hazard") || el.classList.contains("top-event") ? "description" : "id"
+    );
+    return true;
+  }
+
   function wireDescriptionEditing(el, getFull, setFull) {
     if (el.dataset.editingWired) return;
     el.dataset.editingWired = "1";
@@ -387,20 +1143,18 @@
     fitBarrierDescription(el);
 
     el.addEventListener("focus", () => {
+      startEditSession(el, getFull, setFull);
       const value = getFull();
       el.dataset.full = value;
       writeEditableText(el, value);
     });
 
     el.addEventListener("input", () => {
-      const value = readEditableText(el);
-      el.dataset.full = value;
-      setFull(value);
+      el.dataset.full = readEditableText(el);
     });
 
     el.addEventListener("blur", () => {
-      setFull(readEditableText(el));
-      commit(() => {});
+      handleEditBlur(el);
     });
   }
 
@@ -408,9 +1162,12 @@
     if (el.dataset.idWired) return;
     el.dataset.idWired = "1";
 
+    el.addEventListener("focus", () => {
+      startEditSession(el, getId, setId);
+    });
+
     el.addEventListener("input", () => {
       const value = readEditableText(el);
-      setId(value);
       const barrierEl = el.closest(".barrier");
       if (barrierEl) {
         getBarrierSegmentEls(barrierEl.dataset.barrierId).forEach((seg) => {
@@ -420,9 +1177,9 @@
       }
       positionAllConnectors();
     });
+
     el.addEventListener("blur", () => {
-      setId(readEditableText(el));
-      commit(() => {});
+      handleEditBlur(el);
     });
   }
 
@@ -571,19 +1328,39 @@
     });
   }
 
+  function syncCenterAnchor(root, id) {
+    if (!root) return null;
+    let anchor = root.querySelector("[id^='id-']");
+    if (!anchor) {
+      anchor = document.createElement("span");
+      anchor.hidden = true;
+      anchor.tabIndex = -1;
+      anchor.setAttribute("aria-hidden", "true");
+      root.insertBefore(anchor, root.querySelector('[data-role="description"]'));
+    }
+    anchor.id = `id-${id}`;
+    return anchor;
+  }
+
   function renderCenter(s) {
     document.body.dataset.theme = s.meta.theme;
     document.querySelectorAll('[data-action="setTheme"]').forEach((btn) => {
       btn.classList.toggle("is-active", btn.dataset.themeValue === s.meta.theme);
     });
 
-    const hazardTag = document.getElementById(`id-${s.hazard.id}`);
-    if (hazardTag && hazardTag !== document.activeElement) {
-      writeEditableText(hazardTag, s.hazard.label);
+    const hazardRoot = document.querySelector(".hazard");
+    const topEventRoot = document.querySelector(".top-event");
+    syncCenterAnchor(hazardRoot, s.hazard.id);
+    syncCenterAnchor(topEventRoot, s.topEvent.id);
+
+    const hazardDesc = hazardRoot?.querySelector('[data-role="description"]');
+    if (hazardDesc && hazardDesc !== document.activeElement) {
+      hazardDesc.dataset.full = s.hazard.label;
+      writeEditableText(hazardDesc, truncateDescription(s.hazard.label));
     }
-    if (hazardTag) {
+    if (hazardDesc) {
       wireDescriptionEditing(
-        hazardTag,
+        hazardDesc,
         () => s.hazard.label,
         (value) => {
           s.hazard.label = value;
@@ -591,13 +1368,14 @@
       );
     }
 
-    const topTag = document.getElementById(`id-${s.topEvent.id}`);
-    if (topTag && topTag !== document.activeElement) {
-      writeEditableText(topTag, s.topEvent.label);
+    const topEventDesc = topEventRoot?.querySelector('[data-role="description"]');
+    if (topEventDesc && topEventDesc !== document.activeElement) {
+      topEventDesc.dataset.full = s.topEvent.label;
+      writeEditableText(topEventDesc, truncateDescription(s.topEvent.label));
     }
-    if (topTag) {
+    if (topEventDesc) {
       wireDescriptionEditing(
-        topTag,
+        topEventDesc,
         () => s.topEvent.label,
         (value) => {
           s.topEvent.label = value;
@@ -753,7 +1531,7 @@
           const lineB = makeSvgLine();
           lineA.setAttribute("stroke", lineColor);
           lineB.setAttribute("stroke", lineColor);
-          connectorsLayer.append(lineA, lineB);
+          connectorsSvg.append(lineA, lineB);
 
           connectors.push({
             lineA,
@@ -772,7 +1550,7 @@
     if (hazard && topEvent) {
       const line = makeSvgLine();
       line.setAttribute("stroke", lineColor);
-      connectorsLayer.append(line);
+      connectorsSvg.append(line);
       connectors.push({ kind: "hazard", lineA: line, lineB: null, source: hazard, target: topEvent });
     }
 
@@ -885,7 +1663,32 @@
 
   // ---------- Selection & linking ----------
 
+  function snapshotCardRows(side) {
+    const cards = side === "left" ? state.left.causes : state.right.consequences;
+    return cards.map((c) => ({ domId: c.domId, row: c.row }));
+  }
+
+  function snapshotBarrierCols(side) {
+    const barriers = side === "left" ? state.left.barriers : state.right.barriers;
+    return barriers.map((b) => ({ barrierId: b.barrierId, col: b.col }));
+  }
+
+  function cancelCardLayoutChanges() {
+    if (!selectionLayoutSnapshot) return;
+    const snap = selectionLayoutSnapshot;
+    commit((s) => {
+      const cards = snap.side === "left" ? s.left.causes : s.right.consequences;
+      snap.rows.forEach(({ domId, row }) => {
+        const card = cards.find((c) => c.domId === domId);
+        if (card) card.row = row;
+      });
+    });
+    selectionLayoutSnapshot = null;
+    selectionLayoutDirty = false;
+  }
+
   function clearComponentSelection() {
+    clearKeyboardHover();
     ui.selectedIds.forEach((domId) => {
       if (domId === "hazard") document.querySelector(".hazard")?.classList.remove("is-selected");
       else if (domId === "top-event") document.querySelector(".top-event")?.classList.remove("is-selected");
@@ -894,6 +1697,8 @@
     ui.selectedIds.clear();
     ui.selectionAnchorId = null;
     selectedFocusDomId = null;
+    selectionLayoutSnapshot = null;
+    selectionLayoutDirty = false;
   }
 
   function domIdForComponent(el) {
@@ -914,9 +1719,17 @@
     ui.selectionAnchorId = domId;
     ui.selectedIds.add(domId);
     el.classList.add("is-selected");
+    if (el.classList.contains("card")) {
+      const isLeft = !!state.left.causes.find((c) => c.domId === domId);
+      const side = isLeft ? "left" : "right";
+      selectionLayoutSnapshot = { side, rows: snapshotCardRows(side) };
+      selectionLayoutDirty = false;
+    }
   }
 
   function extendSelection(direction) {
+    selectionLayoutSnapshot = null;
+    selectionLayoutDirty = false;
     if (!selectedFocusDomId) return;
     const focusCard = findCardByDomId(selectedFocusDomId);
     if (!focusCard) return;
@@ -974,16 +1787,37 @@
     ui.selectedIds.add(domId);
     cardEl.classList.add("is-selected");
     selectedFocusDomId = domId;
+    selectionLayoutSnapshot = null;
+    selectionLayoutDirty = false;
+  }
+
+  function clearLinkModeUI(prevBarrierId) {
+    clearKeyboardHover();
+    ui.activeBarrierId = null;
+    linkModeSnapshot = null;
+    document.body.classList.remove("linking-mode");
+    document.querySelectorAll(".card.link-target").forEach((card) => {
+      card.classList.remove("link-target", "is-selected", "is-unaffected", "is-keyboard-hover");
+    });
+    if (prevBarrierId) {
+      getBarrierSegmentEls(prevBarrierId).forEach((seg) => seg.classList.remove("is-selected"));
+    }
   }
 
   function enterLinkMode(barrierId) {
     if (ui.activeBarrierId === barrierId) return;
-    exitLinkMode();
+    applyLinkMode();
     clearComponentSelection();
     const side = barrierSide(barrierId);
     const barrier = side ? findBarrier(barrierId, side) : null;
     if (barrier) {
       const leaves = side === "left" ? state.left.causes : state.right.consequences;
+      linkModeSnapshot = {
+        barrierId,
+        protects: [...barrier.protects],
+        everLinked: barrier.everLinked,
+        barrierCols: snapshotBarrierCols(side),
+      };
       barrier.authoredSegments = computeBarrierSegments(barrier, leaves);
     }
     ui.activeBarrierId = barrierId;
@@ -992,7 +1826,29 @@
     buildConnectors();
   }
 
-  function exitLinkMode() {
+  function cancelLinkMode() {
+    if (!ui.activeBarrierId || !linkModeSnapshot) return;
+    const prevBarrierId = ui.activeBarrierId;
+    const side = barrierSide(prevBarrierId);
+    const barrier = side ? findBarrier(prevBarrierId, side) : null;
+    if (barrier && linkModeSnapshot.barrierId === prevBarrierId) {
+      barrier.protects = [...linkModeSnapshot.protects];
+      barrier.everLinked = linkModeSnapshot.everLinked;
+      const leaves = side === "left" ? state.left.causes : state.right.consequences;
+      barrier.authoredSegments = computeBarrierSegments(barrier, leaves);
+    }
+    if (side && linkModeSnapshot.barrierCols) {
+      const barriers = side === "left" ? state.left.barriers : state.right.barriers;
+      linkModeSnapshot.barrierCols.forEach(({ barrierId, col }) => {
+        const b = barriers.find((x) => x.barrierId === barrierId);
+        if (b) b.col = col;
+      });
+    }
+    clearLinkModeUI(prevBarrierId);
+    commit(() => {});
+  }
+
+  function applyLinkMode() {
     if (!ui.activeBarrierId) return;
     const prevBarrierId = ui.activeBarrierId;
     const side = barrierSide(prevBarrierId);
@@ -1001,13 +1857,12 @@
       const leaves = side === "left" ? state.left.causes : state.right.consequences;
       barrier.authoredSegments = computeBarrierSegments(barrier, leaves);
     }
-    ui.activeBarrierId = null;
-    document.body.classList.remove("linking-mode");
-    document.querySelectorAll(".card.link-target").forEach((card) => {
-      card.classList.remove("link-target", "is-selected", "is-unaffected");
-    });
-    getBarrierSegmentEls(prevBarrierId).forEach((seg) => seg.classList.remove("is-selected"));
+    clearLinkModeUI(prevBarrierId);
     commit(() => {});
+  }
+
+  function exitLinkMode() {
+    applyLinkMode();
   }
 
   function toggleProtection(cardEl) {
@@ -1086,6 +1941,7 @@
         }
       });
     });
+    selectionLayoutDirty = true;
   }
 
   function deleteCard(domId) {
@@ -1122,8 +1978,7 @@
       if (index < 0) return;
 
       const removed = barriers.splice(index, 1)[0];
-      ui.activeBarrierId = null;
-      document.body.classList.remove("linking-mode");
+      clearLinkModeUI(barrierId);
 
       barriers.forEach((b) => {
         if (b.col > removed.col) b.col -= 1;
@@ -1227,6 +2082,8 @@
     addReactiveBarrier,
     addConsequence,
     setTheme: (btn) => setTheme(btn.dataset.themeValue),
+    exportState: exportStateToFile,
+    importState: () => document.getElementById("import-state-file")?.click(),
   };
 
   function flashButton(btn) {
@@ -1257,6 +2114,16 @@
   document.addEventListener("keydown", (evt) => {
     if (!ui.activeBarrierId) return;
     if (document.activeElement && document.activeElement.isContentEditable) return;
+
+    if (evt.key === "Enter" && !evt.shiftKey) {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      const barrierId = ui.activeBarrierId;
+      applyLinkMode();
+      focusBarrierIdField(barrierId);
+      return;
+    }
+
     if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
 
     if (/^[1-9]$/.test(evt.key)) {
@@ -1278,6 +2145,13 @@
       return;
     }
 
+    if (evt.key === "ArrowUp" || evt.key === "ArrowDown") {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      navigateLinkTargets(evt.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
+
     const legendRow = document.querySelector(`.legend-row[data-shortcut="${evt.key.toLowerCase()}"]`);
     if (legendRow) {
       evt.preventDefault();
@@ -1287,22 +2161,51 @@
   });
 
   document.addEventListener("keydown", (evt) => {
-    if (!selectedFocusDomId || !findCardByDomId(selectedFocusDomId)) return;
     if (document.activeElement && document.activeElement.isContentEditable) return;
-    if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
-    if (evt.key !== "ArrowUp" && evt.key !== "ArrowDown") return;
+    if (ui.activeBarrierId) return;
+
+    const arrowKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+    if (!arrowKeys.includes(evt.key)) return;
+
+    if (
+      evt.altKey &&
+      !evt.metaKey &&
+      !evt.ctrlKey &&
+      (evt.key === "ArrowUp" || evt.key === "ArrowDown") &&
+      selectedFocusDomId &&
+      findCardByDomId(selectedFocusDomId) &&
+      ui.selectedIds.size <= 1
+    ) {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      moveCardRow(selectedFocusDomId, evt.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
+
+    if (
+      evt.shiftKey &&
+      !evt.altKey &&
+      !evt.metaKey &&
+      !evt.ctrlKey &&
+      (evt.key === "ArrowUp" || evt.key === "ArrowDown") &&
+      selectedFocusDomId &&
+      findCardByDomId(selectedFocusDomId)
+    ) {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      extendSelection(evt.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
+
+    if (evt.metaKey || evt.ctrlKey || evt.altKey || evt.shiftKey) return;
 
     evt.preventDefault();
     evt.stopImmediatePropagation();
-    const direction = evt.key === "ArrowUp" ? -1 : 1;
-    if (evt.shiftKey) {
-      extendSelection(direction);
-    } else if (ui.selectedIds.size <= 1) {
-      moveCardRow(selectedFocusDomId, direction);
-    }
+    navigateComponents(evt.key);
   });
 
   document.addEventListener("mousedown", (evt) => {
+    if (bowtie.contains(evt.target)) clearKeyboardHover();
     const cardEl = evt.target.closest(".card");
     if (cardEl && cardEl.classList.contains("link-target")) evt.preventDefault();
     if (isModClick(evt) && evt.target.closest(".id-tag, .desc-text")) {
@@ -1352,13 +2255,15 @@
       return;
     }
 
-    if (topEventEl && !ui.activeBarrierId && !evt.target.closest(".id-tag, .desc-text")) {
-      selectComponent(topEventEl);
+    if (topEventEl && !ui.activeBarrierId && !evt.target.closest(".desc-text")) {
+      evt.preventDefault();
+      beginFieldEdit(topEventEl, "description");
       return;
     }
 
-    if (hazardEl && !ui.activeBarrierId && !evt.target.closest(".id-tag, .desc-text")) {
-      selectComponent(hazardEl);
+    if (hazardEl && !ui.activeBarrierId && !evt.target.closest(".desc-text")) {
+      evt.preventDefault();
+      beginFieldEdit(hazardEl, "description");
       return;
     }
 
@@ -1366,29 +2271,61 @@
     else clearComponentSelection();
   });
 
-  document.addEventListener("keydown", (evt) => {
-    if (evt.key !== "Enter" || !(evt.metaKey || evt.ctrlKey)) return;
-    const active = document.activeElement;
-    if (!active || !active.isContentEditable) return;
-    evt.preventDefault();
-    const component = active.closest(".card, .barrier, .hazard, .top-event");
-    active.blur();
-    selectComponent(component);
-  });
+  document.addEventListener(
+    "keydown",
+    (evt) => {
+      if (evt.key === "Tab") blurNavigation = "tab";
+    },
+    true
+  );
 
   document.addEventListener("keydown", (evt) => {
-    if (evt.key !== "Escape") return;
-
     const active = document.activeElement;
-    if (active && active.isContentEditable) {
-      const component = active.closest(".card, .barrier, .hazard, .top-event");
-      active.blur();
-      selectComponent(component);
+
+    if (active?.isContentEditable) {
+      if (evt.key === "Escape") {
+        evt.preventDefault();
+        blurNavigation = "cancel";
+        cancelEditSession();
+        const component = active.closest(".card, .barrier, .hazard, .top-event");
+        active.blur();
+        if (component) {
+          clearComponentSelection();
+          setKeyboardNavTarget(component, { select: false });
+        }
+        return;
+      }
+
+      if (evt.key === "Enter") {
+        const isDesc = active.classList.contains("desc-text");
+        if (isDesc && evt.shiftKey && !(evt.metaKey || evt.ctrlKey)) return;
+        evt.preventDefault();
+        blurNavigation = "apply";
+        applyEditSession();
+        active.blur();
+        const component = active.closest(".card, .barrier, .hazard, .top-event");
+        if (evt.metaKey || evt.ctrlKey) {
+          if (component?.classList.contains("barrier")) {
+            enterLinkMode(component.dataset.barrierId);
+          } else if (component) {
+            selectComponent(component);
+          }
+        } else {
+          finishEditingAfterApply(active);
+        }
+      }
       return;
     }
 
-    if (ui.activeBarrierId) exitLinkMode();
-    else clearComponentSelection();
+    if (evt.key === "Enter" && !evt.shiftKey) {
+      if (handleEnterOnComponent(evt)) return;
+    }
+
+    if (evt.key === "Escape") {
+      if (ui.activeBarrierId) cancelLinkMode();
+      else if (selectionLayoutDirty) cancelCardLayoutChanges();
+      else clearComponentSelection();
+    }
   });
 
   document.addEventListener("keydown", (evt) => {
@@ -1436,6 +2373,15 @@
   state = hydrateFromDom();
   render(state);
   buildConnectors();
+
+  const importStateInput = document.getElementById("import-state-file");
+  if (importStateInput) {
+    importStateInput.addEventListener("change", () => {
+      const file = importStateInput.files?.[0];
+      if (file) importStateFromFile(file);
+      importStateInput.value = "";
+    });
+  }
 
   window.addEventListener("resize", () => {
     fitAllBarrierDescriptions();

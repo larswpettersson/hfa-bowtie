@@ -4,7 +4,7 @@ A standalone HTML5 bowtie diagram editor for safety analysis, designed from Penp
 
 ## 📁 Files
 
-- **`prototype.html`** - Interactive bowtie diagram editor with pan/zoom, theme switching, and node editing
+- **`Bowtie.html`** - Interactive bowtie diagram editor with pan/zoom, theme switching, and node editing ([`scripts/penpot5-app.js`](scripts/penpot5-app.js))
 - **Design tokens:** canonical source is [hfa-ds/tokens.json](https://github.com/larswpettersson/hfa-ds/blob/main/tokens.json) (not stored in this repo)
 - **`PENPOT_MCP_SETUP_GUIDE.md`** - Detailed guide for connecting Cursor to Penpot MCP
 - **`MOBILE_QUICK_START.md`** - Quick reference for mobile Cursor setup
@@ -42,7 +42,7 @@ This project was created from Penpot design components and can be connected to P
 ## 🚀 Usage
 
 ### Running Locally
-Simply open `prototype.html` in any modern web browser - no build process required!
+Simply open `Bowtie.html` in any modern web browser - no build process required!
 
 ### Development with Penpot MCP
 Once MCP is connected, you can use Cursor AI to:
@@ -70,16 +70,15 @@ Design tokens and shared components live in the Penpot **HFA DS** file (shared l
 Design tokens are defined in the [hfa-ds](https://github.com/larswpettersson/hfa-ds) repository and imported into Penpot files via MCP. This repo does not contain a local `tokens.json`.
 
 - **Colors**: Background (base/sunken/elevated), semantic (info/warning/success/error), brand (Trafikverket red)
-- **Typography:** Source Sans 3 via `roboto-base` token (matches `prototype4.html`)
+- **Typography:** Source Sans 3 via `roboto-base` token
 - **Border Styles**: Normal (1px), Strong (3px), Weak (dashed)
 - **Themes**: Light and dark modes with proper contrast ratios
 
-### HTML prototypes
+### App entry
 
 | File | Role |
 |---|---|
-| [`prototype4.html`](prototype4.html) | Stable reference — DOM-as-source-of-truth |
-| [`penpot5.html`](penpot5.html) | Experimental — in-memory state + render-from-state ([`scripts/penpot5-app.js`](scripts/penpot5-app.js)) |
+| [`Bowtie.html`](Bowtie.html) | Current app — in-memory state + render-from-state ([`scripts/penpot5-app.js`](scripts/penpot5-app.js)) |
 
 Run smoke checks: `python3 scripts/penpot5-smoke-test.py`
 

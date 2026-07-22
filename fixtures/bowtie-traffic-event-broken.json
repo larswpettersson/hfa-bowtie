@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "meta": {
+    "theme": "light",
+    "seq": {
+      "cause": 3,
+      "preventiveBarrier": 2,
+      "reactiveBarrier": 2,
+      "consequence": 2
+    }
+  },
+  "hazard": {
+    "id": "HZ",
+    "label": "Kinetic energy of the moving vehicle"
+  },
+  "topEvent": {
+    "id": "TE",
+    "label": "Vehicle and pedestrian on an unavoidable collision trajectory at a pedestrian crossing"
+  },
+  "left": {
+    "rows": 3,
+    "barrierCols": 2,
+    "causes": [
+      {
+        "id": "C1",
+        "domId": "c-C1",
+        "idTagId": "id-C1",
+        "description": "Driver distraction (e.g., operating a mobile device or infotainment system)",
+        "row": 1,
+        "connectorTarget": "id-TE"
+      },
+      {
+        "id": "C2",
+        "domId": "c-C2",
+        "idTagId": "id-C2",
+        "description": "Poor visibility due to darkness, heavy rain, or glare",
+        "row": 2,
+        "connectorTarget": "id-TE"
+      },
+      {
+        "id": "C3",
+        "domId": "c-C3",
+        "idTagId": "id-C3",
+        "description": "Pedestrian steps onto crossing without checking traffic (distracted pedestrian)",
+        "row": 3,
+        "connectorTarget": "id-TE"
+      }
+    ],
+    "barriers": [
+      {
+        "barrierId": "p1",
+        "id": "P1",
+        "description": "Autonomous Emergency Braking (AEB) with pedestrian detection",
+        "col": 1,
+        "strength": "High",
+        "status": "Implemented",
+        "protects": [
+          "id-C1",
+          "id-C2"
+        ],
+        "everLinked": true,
+        "authoredSegments": [
+          {
+            "row": 1,
+            "rowSpan": 2,
+            "domId": "b-p1",
+            "idTagId": "id-P1"
+          }
+        ]
+      },
+      {
+        "barrierId": "p2",
+        "id": "P2",
+        "description": "High-visibility pedestrian crossing LED lighting and active speed bumps",
+        "col": 2,
+        "strength": "Normal",
+        "status": "Implemented",
+        "protects": [
+          "id-C2",
+          "id-C3"
+        ],
+        "everLinked": true,
+        "authoredSegments": [
+          {
+            "row": 2,
+            "rowSpan": 2,
+            "domId": "b-p2",
+            "idTagId": "id-P2"
+          }
+        ]
+      }
+    ]
+  },
+  "right": {
+    "rows": 2,
+    "barrierCols": 2,
+    "consequences": [
+      {
+        "id": "K1",
+        "domId": "c-K1",
+        "idTagId": "id-K1",
+        "description": "Severe physical injuries or fatality to the pedestrian",
+        "row": 1,
+        "connectorTarget": "id-TE"
+      },
+      {
+        "id": "K2",
+        "domId": "c-K2",
+        "idTagId": "id-K2",
+        "description": "Minor injuries to pedestrian, driver shock, and minor vehicle damage",
+        "row": 2,
+        "connectorTarget": "id-TE"
+      }
+    ],
+    "barriers": [
+      {
+        "barrierId": "r1",
+        "id": "R1",
+        "description": "Passive pedestrian safety features (e.g., pedestrian bonnet airbag, energy-absorbing bumper)",
+        "col": 1,
+        "strength": "Normal",
+        "status": "Implemented",
+        "protects": [
+          "id-K1"
+        ],
+        "everLinked": true,
+        "authoredSegments": [
+          {
+            "row": 1,
+            "rowSpan": 1,
+            "domId": "b-r1",
+            "idTagId": "id-R1"
+          }
+        ]
+      },
+      {
+        "barrierId": "r2",
+        "id": "R2",
+        "description": "Automated eCall crash response and rapid emergency medical services dispatch",
+        "col": 2,
+        "strength": "High",
+        "status": "Implemented",
+        "protects": [
+          "id-K1",
+          "id-K2"
+        ],
+        "everLinked": true,
+        "authoredSegments": [
+          {
+            "row": 1,
+            "rowSpan": 2,
+            "domId": "b-r2",
+            "idTagId": "id-R2"
+          }
+        ]
+      }
+    ]
+  }
+}
