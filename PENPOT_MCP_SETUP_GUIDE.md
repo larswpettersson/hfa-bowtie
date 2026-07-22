@@ -6,7 +6,7 @@ This guide will help you connect your Cursor app (desktop and mobile) to Penpot 
 
 Your repository contains:
 - `prototype.html` - Bowtie diagram editor (created from Penpot components)
-- `tokens.json` - Design tokens matching your Penpot design system
+- Design tokens live in [hfa-ds](https://github.com/larswpettersson/hfa-ds) — not in this repo
 
 ## Setup Checklist
 
@@ -161,7 +161,7 @@ Once connected, you can use prompts like:
 ### Code Generation
 - "Update the CSS in prototype.html to match the latest toolbar design in Penpot"
 - "Generate a new node component based on the Hazard shape from Penpot"
-- "Export the color palette from Penpot and update tokens.json"
+- "Export the color palette from Penpot and update hfa-ds/tokens.json"
 
 ### Sync & Update
 - "Check if the border-radius values in prototype.html match my Penpot design"
@@ -226,7 +226,7 @@ Once connected, you can use prompts like:
 
 ✅ Repository is ready for MCP integration:
 - `prototype.html` - Your working Bowtie editor
-- `tokens.json` - Design tokens from Penpot
+- [hfa-ds/tokens.json](https://github.com/larswpettersson/hfa-ds/blob/main/tokens.json) - Design tokens from Penpot (canonical repo: hfa-ds)
 - `.git` - Version control configured
 - Comments in HTML confirm Penpot origin
 

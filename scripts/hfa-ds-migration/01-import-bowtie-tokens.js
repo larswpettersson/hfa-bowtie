@@ -1,7 +1,7 @@
 /**
  * Penpot MCP execute_code — import Bowtie mode/light + mode/dark token sets.
  * Run with the target file connected (HFA DS first, then each consumer).
- * Keeps token key names identical to Bowtie / tokens.json.
+ * Keeps token key names identical to hfa-ds/tokens.json.
  */
 (function importBowtieTokens() {
   const SOURCE_SANS = ["Source Sans 3"];
