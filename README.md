@@ -74,6 +74,15 @@ This project uses design tokens from `tokens.json` that align with the Penpot de
 - **Border Styles**: Normal (1px), Strong (3px), Weak (dashed)
 - **Themes**: Light and dark modes with proper contrast ratios
 
+### HTML prototypes
+
+| File | Role |
+|---|---|
+| [`prototype4.html`](prototype4.html) | Stable reference — DOM-as-source-of-truth |
+| [`penpot5.html`](penpot5.html) | Experimental — in-memory state + render-from-state ([`scripts/penpot5-app.js`](scripts/penpot5-app.js)) |
+
+Run smoke checks: `python3 scripts/penpot5-smoke-test.py`
+
 ## 📄 License
 
 [Add your license here]
