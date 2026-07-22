@@ -1,15 +1,15 @@
 # HFA DS Penpot migration scripts
 
-Run via **Penpot MCP → execute_code** with the indicated file connected (File → MCP Server → Connect).
+**Superseded by the [hfa-ds](https://github.com/larswpettersson/hfa-ds) repo.**
 
-| Order | Script | Connect file |
-|---|---|---|
-| 0 | `00-orchestrator.js` | **HFA DS** first, then Bowtie → HTA → STPA → RBD |
-| 1 | `01-import-bowtie-tokens.js` | Same (tokens only) |
-| 2 | `02-component-migration.md` | Manual UI steps for components + library publish |
+Use scripts from the Bowtie submodule:
 
-**Completed automatically (MCP):** token import pattern, Source Sans 3 on `roboto-base`, STPA Note token/font styling when STPA is connected.
+```
+design-tokens/scripts/penpot/import-bundle.js   # paste into Penpot MCP execute_code
+design-tokens/scripts/penpot/validate.js
+design-tokens/scripts/penpot/export-to-json.js
+```
 
-**Requires Penpot UI:** copying components into HFA DS, publishing library, swapping instances in app files.
+Connect each Penpot file in order: **HFA DS → Bowtie → HTA → STPA → RBD**
 
-**Rollback:** History → `"Pre Assets and tokens refactoring"`.
+Legacy scripts in this folder remain for reference only.

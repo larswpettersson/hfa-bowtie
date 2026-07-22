@@ -5,7 +5,7 @@ A standalone HTML5 bowtie diagram editor for safety analysis, designed from Penp
 ## 📁 Files
 
 - **`prototype.html`** - Interactive bowtie diagram editor with pan/zoom, theme switching, and node editing
-- **`tokens.json`** - Design tokens (colors, typography, spacing) for light/dark themes
+- **`design-tokens/tokens.json`** - Design tokens (git submodule → [hfa-ds](https://github.com/larswpettersson/hfa-ds))
 - **`PENPOT_MCP_SETUP_GUIDE.md`** - Detailed guide for connecting Cursor to Penpot MCP
 - **`MOBILE_QUICK_START.md`** - Quick reference for mobile Cursor setup
 
@@ -48,7 +48,7 @@ Simply open `prototype.html` in any modern web browser - no build process requir
 Once MCP is connected, you can use Cursor AI to:
 - Query design specifications from your Penpot file
 - Generate code updates based on design changes
-- Export design tokens and sync with `tokens.json`
+- Export design tokens and sync with `design-tokens/tokens.json`
 - Create new components matching your Penpot design system
 
 Example prompts:
@@ -63,11 +63,11 @@ Generate a new node type based on the Consequence component
 Design tokens and shared components live in the Penpot **HFA DS** file (shared library). Bowtie is the design-language authority for colors, typography, and diagram components.
 
 - **Penpot hub:** HFA DS — `mode/light`, `mode/dark`, all shared components
-- **Code export:** [`tokens.json`](tokens.json) (sync from HFA DS after token changes)
-- **Typography:** `roboto-base` token → Source Sans 3 stack (matches `prototype4.html`)
-- **Migration scripts:** [`scripts/hfa-ds-migration/`](scripts/hfa-ds-migration/)
+- **Code export:** [`design-tokens/tokens.json`](design-tokens/tokens.json) (canonical repo: [hfa-ds](https://github.com/larswpettersson/hfa-ds))
+- **Penpot sync scripts:** [`design-tokens/scripts/penpot/`](design-tokens/scripts/penpot/)
+- **Legacy migration notes:** [`scripts/hfa-ds-migration/`](scripts/hfa-ds-migration/) (superseded by hfa-ds repo)
 
-This project uses design tokens from `tokens.json` that align with the Penpot design file:
+This project uses design tokens from `design-tokens/tokens.json` that align with the Penpot design file:
 
 - **Colors**: Background (base/sunken/elevated), semantic (info/warning/success/error), brand (Trafikverket red)
 - **Typography:** Source Sans 3 via `roboto-base` token (matches `prototype4.html`)
