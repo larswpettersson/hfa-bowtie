@@ -1,9 +1,15 @@
 (function () {
   const bowtie = document.getElementById("bowtie");
+  const bowtieWrap = document.querySelector(".bowtie-wrap");
   const zoneLeft = document.getElementById("zone-left");
   const zoneCenter = document.getElementById("zone-center");
   const zoneRight = document.getElementById("zone-right");
   const connectorsSvg = bowtie.querySelector(".connectors-svg");
+
+  let spacePanArmed = false;
+  let isPanning = false;
+  let panLast = { x: 0, y: 0 };
+  let ignoreClickAfterPan = false;
 
   let state = null;
   const ui = { activeBarrierId: null, selectedIds: new Set(), selectionAnchorId: null };
@@ -1134,17 +1140,20 @@
   }
 
   function wireDescriptionEditing(el, getFull, setFull) {
-    if (el.dataset.editingWired) return;
-    el.dataset.editingWired = "1";
+    el._getFull = getFull;
+    el._setFull = setFull;
 
     const full = getFull();
     el.dataset.full = full;
     applyDescriptionTruncation(el, full);
     fitBarrierDescription(el);
 
+    if (el.dataset.editingWired) return;
+    el.dataset.editingWired = "1";
+
     el.addEventListener("focus", () => {
-      startEditSession(el, getFull, setFull);
-      const value = getFull();
+      startEditSession(el, el._getFull, el._setFull);
+      const value = el._getFull();
       el.dataset.full = value;
       writeEditableText(el, value);
     });
@@ -1159,11 +1168,14 @@
   }
 
   function wireIdTagEditing(el, getId, setId) {
+    el._getId = getId;
+    el._setId = setId;
+
     if (el.dataset.idWired) return;
     el.dataset.idWired = "1";
 
     el.addEventListener("focus", () => {
-      startEditSession(el, getId, setId);
+      startEditSession(el, el._getId, el._setId);
     });
 
     el.addEventListener("input", () => {
@@ -2269,6 +2281,18 @@
 
     if (ui.activeBarrierId) exitLinkMode();
     else clearComponentSelection();
+
+    if (!barrierEl && !cardEl && !hazardEl && !topEventEl) {
+      // True empty-canvas click: nothing under the pointer was a component.
+      // Chromium's contenteditable caret hit-testing can still snap focus into
+      // a nearby desc-text/id-tag field in sparse grid gaps (e.g. the split
+      // barrier gap) even though elementFromPoint confirms no node was hit —
+      // blur it so the click reads as a plain deselect, not a text-edit open.
+      const active = document.activeElement;
+      if (active && active !== document.body && active.isContentEditable) {
+        active.blur();
+      }
+    }
   });
 
   document.addEventListener(
@@ -2366,6 +2390,80 @@
     if (!btn) return;
     evt.preventDefault();
     runAction(btn);
+  });
+
+  // ---------- Pan ----------
+
+  function setSpacePanArmed(armed) {
+    spacePanArmed = armed;
+    bowtieWrap?.classList.toggle("is-space-pan", armed);
+    if (!armed && isPanning) endPan();
+  }
+
+  function beginPan(clientX, clientY) {
+    if (!bowtieWrap) return;
+    isPanning = true;
+    panLast = { x: clientX, y: clientY };
+    bowtieWrap.classList.add("is-panning");
+  }
+
+  function movePan(clientX, clientY) {
+    if (!isPanning || !bowtieWrap) return;
+    const dx = clientX - panLast.x;
+    const dy = clientY - panLast.y;
+    panLast = { x: clientX, y: clientY };
+    bowtieWrap.scrollLeft -= dx;
+    bowtieWrap.scrollTop -= dy;
+  }
+
+  function endPan() {
+    if (!isPanning) return;
+    isPanning = false;
+    bowtieWrap?.classList.remove("is-panning");
+    ignoreClickAfterPan = true;
+  }
+
+  bowtieWrap?.addEventListener(
+    "click",
+    (evt) => {
+      if (!ignoreClickAfterPan) return;
+      ignoreClickAfterPan = false;
+      evt.preventDefault();
+      evt.stopPropagation();
+    },
+    true
+  );
+
+  bowtieWrap?.addEventListener("mousedown", (evt) => {
+    if (!spacePanArmed || evt.button !== 0) return;
+    evt.preventDefault();
+    beginPan(evt.clientX, evt.clientY);
+  });
+
+  window.addEventListener("mousemove", (evt) => {
+    if (isPanning) {
+      evt.preventDefault();
+      movePan(evt.clientX, evt.clientY);
+    }
+  });
+
+  window.addEventListener("mouseup", () => {
+    endPan();
+  });
+
+  document.addEventListener("keydown", (evt) => {
+    if (evt.code !== "Space" && evt.key !== " ") return;
+    if (document.activeElement && document.activeElement.isContentEditable) return;
+    evt.preventDefault();
+    if (!evt.repeat) setSpacePanArmed(true);
+  });
+
+  document.addEventListener("keyup", (evt) => {
+    if (evt.code === "Space" || evt.key === " ") setSpacePanArmed(false);
+  });
+
+  window.addEventListener("blur", () => {
+    setSpacePanArmed(false);
   });
 
   // ---------- Init ----------

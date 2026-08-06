@@ -4,7 +4,7 @@ A standalone HTML5 bowtie diagram editor for safety analysis, designed from Penp
 
 ## 📁 Files
 
-- **`Bowtie.html`** - Interactive bowtie diagram editor with pan/zoom, theme switching, and node editing ([`scripts/penpot5-app.js`](scripts/penpot5-app.js))
+- **`Bowtie.html`** - Interactive bowtie diagram editor with pan/zoom, theme switching, and node editing ([`scripts/bowtie-app.js`](scripts/bowtie-app.js))
 - **Design tokens:** canonical source is [hfa-ds/tokens.json](https://github.com/larswpettersson/hfa-ds/blob/main/tokens.json) (not stored in this repo)
 - **`PENPOT_MCP_SETUP_GUIDE.md`** - Detailed guide for connecting Cursor to Penpot MCP
 - **`MOBILE_QUICK_START.md`** - Quick reference for mobile Cursor setup
@@ -78,7 +78,7 @@ Design tokens are defined in the [hfa-ds](https://github.com/larswpettersson/hfa
 
 | File | Role |
 |---|---|
-| [`Bowtie.html`](Bowtie.html) | Current app — in-memory state + render-from-state ([`scripts/penpot5-app.js`](scripts/penpot5-app.js)) |
+| [`Bowtie.html`](Bowtie.html) | Current app — in-memory state + render-from-state ([`scripts/bowtie-app.js`](scripts/bowtie-app.js)) |
 
 Run smoke checks: `python3 scripts/penpot5-smoke-test.py`
 

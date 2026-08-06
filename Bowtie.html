@@ -6,7 +6,7 @@
   <title>Bowtie Application</title>
   <!--
     State-driven refactor of prototype4 — in-memory model + render-from-state.
-    App logic: scripts/penpot5-app.js
+    App logic: scripts/bowtie-app.js
     Typography: Source Sans 3 system stack (update Penpot roboto-base token accordingly).
     Rebuilt from the Penpot "Bowtie Application" board plus the standalone
     Hazard node from the connector board (above Top Event, straight connector).
@@ -73,6 +73,9 @@
 
     .app {
       padding: 24px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
 
     .app-title {
@@ -88,6 +91,8 @@
       flex-direction: column;
       align-items: stretch;
       gap: 12px;
+      flex: 1 1 auto;
+      min-height: 0;
     }
 
     .toolbar-wrap {
@@ -116,34 +121,78 @@
       font-size: 14px;
       color: var(--color-foreground);
       background: var(--color-background-base);
-      border: 1px solid var(--color-foreground);
-      border-radius: 6px;
+      border: none;
+      border-radius: 8px;
       cursor: pointer;
     }
 
-    .action-btn:hover { box-shadow: 4px 4px 4px var(--interaction-shadow); }
+    /* Penpot "Action Button" states: Hovered = drop-shadow, Pressed = inner-shadow, both black @ 20%. */
+    .action-btn:hover { box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.2); }
     .action-btn:active,
-    .action-btn.is-flashed { box-shadow: inset 0 0 0 2px var(--color-foreground); }
+    .action-btn.is-flashed { box-shadow: inset 0 0 4px 4px rgba(0, 0, 0, 0.2); }
 
     .ul { text-decoration: underline; }
 
     .bowtie-wrap {
       min-width: 0;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      overscroll-behavior: contain;
+      cursor: default;
+    }
+
+    .bowtie-wrap.is-space-pan {
+      cursor: grab;
+    }
+
+    .bowtie-wrap.is-space-pan .card,
+    .bowtie-wrap.is-space-pan .barrier,
+    .bowtie-wrap.is-space-pan .hazard,
+    .bowtie-wrap.is-space-pan .top-event {
+      cursor: grab;
+    }
+
+    .bowtie-wrap.is-panning {
+      cursor: grabbing;
+      user-select: none;
+    }
+
+    .bowtie-wrap.is-panning .card,
+    .bowtie-wrap.is-panning .barrier,
+    .bowtie-wrap.is-panning .hazard,
+    .bowtie-wrap.is-panning .top-event {
+      cursor: grabbing;
+      pointer-events: none;
     }
 
     .bowtie {
       position: relative;
       display: grid;
-      grid-template-columns: minmax(280px, 1fr) auto minmax(280px, 1fr);
+      /* Floor matches the side zones' own min-content width (card column
+         200px + two barrier columns + inner gaps/padding) so a shrinking
+         window triggers .bowtie-wrap's horizontal scroll instead of the
+         inner grid overflowing sideways into the center zone. */
+      grid-template-columns:
+        minmax(calc(200px + var(--barrier-width) * 2 + var(--gap-col) * 2 + 16px), 1fr)
+        auto
+        minmax(calc(200px + var(--barrier-width) * 2 + var(--gap-col) * 2 + 16px), 1fr);
+      grid-template-rows: auto 1fr;
       align-items: stretch;
       background: var(--color-background-sunken);
       min-height: 640px;
-      width: 100%;
+      /* fit-content clamps between the wrapper's available width and the
+         grid's min-content floor, so the box (and its background) always
+         matches what actually renders: fills the wrapper normally, grows
+         only as far as the columns' real minimum when space is tight. */
+      width: fit-content;
     }
 
     .zone { min-width: 0; min-height: 0; }
 
     .zone--left {
+      grid-column: 1;
+      grid-row: 1 / span 2;
       display: grid;
       grid-template-columns: minmax(200px, 1fr) var(--barrier-width) var(--barrier-width);
       grid-template-rows: repeat(3, 1fr);
@@ -153,6 +202,8 @@
     }
 
     .zone--center {
+      grid-column: 2;
+      grid-row: 1 / span 2;
       display: grid;
       place-items: center;
       padding: 8px 24px;
@@ -204,6 +255,8 @@
     }
 
     .zone--right {
+      grid-column: 3;
+      grid-row: 2;
       display: grid;
       grid-template-columns: var(--barrier-width) var(--barrier-width) minmax(200px, 1fr);
       grid-template-rows: repeat(2, 1fr);
@@ -361,22 +414,26 @@
     }
 
     .legend {
-      position: absolute;
-      top: 0;
-      right: 0;
+      grid-column: 3;
+      grid-row: 1;
+      justify-self: end;
+      align-self: start;
       width: 174px;
+      margin-bottom: var(--gap-row);
       padding: 7px 14px;
       border-radius: 8px;
       background: var(--color-background-sunken);
       display: flex;
       flex-direction: column;
       gap: 4px;
-      z-index: 3;
+      position: relative;
+      z-index: 1;
       pointer-events: auto;
-      transition: transform 150ms ease, box-shadow 150ms ease;
+      transition: transform 150ms ease, box-shadow 150ms ease, z-index 150ms ease;
     }
 
     .legend:hover {
+      z-index: 4;
       transform: translateY(-6px);
       box-shadow: 4px 4px 8px var(--interaction-shadow);
     }
@@ -437,8 +494,10 @@
       color: #57606a;
     }
 
-    /* Diagram depth (back → front): connectors (1), components (2), legend (3).
-       Siblings under .bowtie so legend hover never lifts connector lines. */
+    /* Diagram depth (back → front): connectors/legend (1, tied — legend follows in
+       DOM order), components (2), legend on hover (4). Legend sits under cards and
+       barriers by default so it never obscures diagram nodes (e.g. R1, K1), and
+       only rises above them while the pointer is over it. */
     .connectors-layer {
       position: absolute;
       inset: 0;
@@ -612,6 +671,6 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
       </div>
     </div>
   </div>
-  <script src="scripts/penpot5-app.js"></script>
+  <script src="scripts/bowtie-app.js"></script>
 </body>
 </html>
