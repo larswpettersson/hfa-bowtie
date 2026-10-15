@@ -534,6 +534,38 @@
       overflow: visible;
       pointer-events: none;
     }
+
+    /* Print: show the whole diagram (no scroll container / viewport-height clipping),
+       drop the toolbar and help dialog, and keep the colours (status/strength swatches,
+       backgrounds) that browsers strip by default. */
+    @page { size: A4 landscape; margin: 10mm; }
+    @media print {
+      * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      html, body { height: auto; min-height: 0; }
+      .app { height: auto; padding: 0; display: block; }
+      .app-title { margin-bottom: 8px; }
+      .toolbar-wrap, .help-dialog { display: none !important; }
+      .bowtie-application { display: block; }
+      /* Print at the on-screen layout size, scaled uniformly to one page. The JS
+         beforeprint handler sets --print-w/-h/-scale. Connector coordinates are
+         computed unscaled beforehand, so they scale together with the diagram. */
+      .bowtie-wrap {
+        width: calc(var(--print-w, 100%) * var(--print-scale, 1));
+        height: calc(var(--print-h, auto) * var(--print-scale, 1));
+        overflow: hidden;
+      }
+      .bowtie {
+        width: var(--print-w, fit-content);
+        height: var(--print-h, auto);
+        min-height: 0;
+        transform: scale(var(--print-scale, 1));
+        transform-origin: 0 0;
+      }
+      .card, .barrier, .hazard, .top-event, .legend-row { break-inside: avoid; }
+    }
   </style>
 </head>
 <body data-theme="light">
@@ -628,19 +660,19 @@
 
             <div class="barrier" id="b-p1" data-barrier-id="p1" data-row="1" data-col="2" data-row-span="2" data-strength="Normal" data-status="Partly Implemented">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-P1">P1</div>
-              <p class="desc-text" contenteditable="true" data-role="description">Förarutbildning, ruttkännedom samt regler för trötthet och vila</p>
+              <p class="desc-text" contenteditable="true" data-role="description">Förarutbildning samt trötthets- och vilotidsregler</p>
             </div>
             <div class="barrier" id="b-p2" data-barrier-id="p2" data-row="3" data-col="2" data-row-span="1" data-strength="Normal" data-status="Implemented">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-P2">P2</div>
-              <p class="desc-text" contenteditable="true" data-role="description">Röjning av växtlighet och regelbunden besiktning av signalsikt</p>
+              <p class="desc-text" contenteditable="true" data-role="description">Röjning av växtlighet och signalsiktsbesiktning</p>
             </div>
             <div class="barrier" id="b-p3" data-barrier-id="p3" data-row="4" data-col="2" data-row-span="1" data-strength="Weak" data-status="To be implemented">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-P3">P3</div>
-              <p class="desc-text" contenteditable="true" data-role="description">Halkbekämpning: rälsrengöring och sandning</p>
+              <p class="desc-text" contenteditable="true" data-role="description">Halkbekämpning (sandning)</p>
             </div>
             <div class="barrier" id="b-p4" data-barrier-id="p4" data-row="1" data-col="3" data-row-span="4" data-strength="Strong" data-status="Implemented">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-P4">P4</div>
-              <p class="desc-text" contenteditable="true" data-role="description">ATC: hastighetsövervakning och automatisk inbromsning före stoppsignal</p>
+              <p class="desc-text" contenteditable="true" data-role="description">ATC: hastighetsövervakning och automatisk inbromsning</p>
             </div>
           </section>
 
@@ -662,15 +694,15 @@
           <section class="zone zone--right" id="zone-right" aria-label="Reactive Barriers and Consequences">
             <div class="barrier" id="b-r1" data-barrier-id="r1" data-row="1" data-col="1" data-row-span="2" data-strength="Normal" data-status="Implemented">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-R1">R1</div>
-              <p class="desc-text" contenteditable="true" data-role="description">GSM-R-nödanrop: trafikledaren stoppar tågen i närområdet</p>
+              <p class="desc-text" contenteditable="true" data-role="description">GSM-R-nödanrop till trafikledare</p>
             </div>
             <div class="barrier" id="b-r2" data-barrier-id="r2" data-row="1" data-col="2" data-row-span="2" data-strength="Strong" data-status="Not Implemented">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-R2">R2</div>
-              <p class="desc-text" contenteditable="true" data-role="description">Flankskydd: skyddssträcka bakom signalen och växlar i skyddsläge</p>
+              <p class="desc-text" contenteditable="true" data-role="description">Flankskydd och skyddssträcka</p>
             </div>
             <div class="barrier" id="b-r3" data-barrier-id="r3" data-row="3" data-col="1" data-row-span="1" data-strength="Normal" data-status="Unknown">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-R3">R3</div>
-              <p class="desc-text" contenteditable="true" data-role="description">Trafikledningens trafikstörningsplan och omplanering</p>
+              <p class="desc-text" contenteditable="true" data-role="description">Trafikstörningsplan</p>
             </div>
 
             <article class="card" id="c-K1" data-kind="consequence" data-row="1" data-col="3">

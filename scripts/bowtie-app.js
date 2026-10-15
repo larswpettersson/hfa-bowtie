@@ -2498,11 +2498,39 @@
   }
 
   window.addEventListener("resize", () => {
+    if (printing) return;
+    fitAllBarrierDescriptions();
+    positionAllConnectors();
+  });
+
+  // Print: freeze the on-screen layout size, scale it to fit one A4-landscape page
+  // (10 mm margins, ~96 dpi) and keep connectors from being recomputed while scaled.
+  let printing = false;
+  const PRINT_MAX_W = 1040;
+  const PRINT_MAX_H = 650;
+
+  window.addEventListener("beforeprint", () => {
+    fitAllBarrierDescriptions();
+    positionAllConnectors();
+    const rect = bowtie.getBoundingClientRect();
+    const scale = Math.min(1, PRINT_MAX_W / rect.width, PRINT_MAX_H / rect.height);
+    const root = document.documentElement.style;
+    root.setProperty("--print-w", rect.width + "px");
+    root.setProperty("--print-h", rect.height + "px");
+    root.setProperty("--print-scale", String(scale));
+    printing = true;
+  });
+
+  window.addEventListener("afterprint", () => {
+    printing = false;
+    const root = document.documentElement.style;
+    ["--print-w", "--print-h", "--print-scale"].forEach((v) => root.removeProperty(v));
     fitAllBarrierDescriptions();
     positionAllConnectors();
   });
 
   const ro = new ResizeObserver(() => {
+    if (printing) return;
     fitAllBarrierDescriptions();
     positionAllConnectors();
   });

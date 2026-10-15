@@ -58,7 +58,7 @@
       {
         "barrierId": "p1",
         "id": "P1",
-        "description": "Förarutbildning, ruttkännedom samt regler för trötthet och vila",
+        "description": "Förarutbildning samt trötthets- och vilotidsregler",
         "col": 2,
         "strength": "Normal",
         "status": "Partly Implemented",
@@ -79,7 +79,7 @@
       {
         "barrierId": "p2",
         "id": "P2",
-        "description": "Röjning av växtlighet och regelbunden besiktning av signalsikt",
+        "description": "Röjning av växtlighet och signalsiktsbesiktning",
         "col": 2,
         "strength": "Normal",
         "status": "Implemented",
@@ -99,7 +99,7 @@
       {
         "barrierId": "p3",
         "id": "P3",
-        "description": "Halkbekämpning: rälsrengöring och sandning",
+        "description": "Halkbekämpning (sandning)",
         "col": 2,
         "strength": "Weak",
         "status": "To be implemented",
@@ -119,7 +119,7 @@
       {
         "barrierId": "p4",
         "id": "P4",
-        "description": "ATC: hastighetsövervakning och automatisk inbromsning före stoppsignal",
+        "description": "ATC: hastighetsövervakning och automatisk inbromsning",
         "col": 3,
         "strength": "Strong",
         "status": "Implemented",
@@ -174,7 +174,7 @@
       {
         "barrierId": "r1",
         "id": "R1",
-        "description": "GSM-R-nödanrop: trafikledaren stoppar tågen i närområdet",
+        "description": "GSM-R-nödanrop till trafikledare",
         "col": 1,
         "strength": "Normal",
         "status": "Implemented",
@@ -195,7 +195,7 @@
       {
         "barrierId": "r2",
         "id": "R2",
-        "description": "Flankskydd: skyddssträcka bakom signalen och växlar i skyddsläge",
+        "description": "Flankskydd och skyddssträcka",
         "col": 2,
         "strength": "Strong",
         "status": "Not Implemented",
@@ -216,7 +216,7 @@
       {
         "barrierId": "r3",
         "id": "R3",
-        "description": "Trafikledningens trafikstörningsplan och omplanering",
+        "description": "Trafikstörningsplan",
         "col": 1,
         "strength": "Normal",
         "status": "Unknown",
