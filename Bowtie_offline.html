@@ -488,11 +488,29 @@
       border: 1px dotted var(--color-foreground);
     }
 
-    .hint {
-      margin: 12px 0 0;
-      font-size: 12px;
-      color: #57606a;
+    .help-dialog {
+      max-width: min(720px, calc(100vw - 32px));
+      max-height: calc(100vh - 32px);
+      padding: 20px 24px;
+      color: var(--color-foreground);
+      background: var(--color-background-elevated);
+      border: 1px solid var(--color-foreground-subtle);
+      border-radius: 8px;
+      font-size: 13px;
     }
+    .help-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+    .help-dialog h2 { margin: 0 0 12px; font-size: 16px; }
+    .help-dialog h3 { margin: 14px 0 4px; font-size: 13px; }
+    .help-dialog dl {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 3px 16px;
+      margin: 0;
+    }
+    .help-dialog dt { font-weight: 600; white-space: nowrap; }
+    .help-dialog dd { margin: 0; color: var(--color-foreground-muted); }
+    .help-dialog .help-note { margin: 14px 0 0; color: var(--color-foreground-muted); }
+    .help-dialog .help-close { float: right; }
 
     /* Diagram depth (back → front): connectors/legend (1, tied — legend follows in
        DOM order), components (2), legend on hover (4). Legend sits under cards and
@@ -525,16 +543,16 @@
     <div class="bowtie-application">
       <div class="toolbar-wrap">
         <div class="toolbar" role="toolbar" aria-label="Add bowtie elements">
-          <button type="button" class="action-btn" data-action="addCause" data-shortcut="c" title="Lägg till Cause (C)">
+          <button type="button" class="action-btn" data-action="addCause" data-shortcut="c" title="Ca = Cause (orsak) — lägg till, genväg C" aria-label="Lägg till Cause">
             <span>+</span><span class="ul">C</span><span>a</span>
           </button>
-          <button type="button" class="action-btn" data-action="addPreventiveBarrier" data-shortcut="b" title="Lägg till Preventive Barrier (B)">
+          <button type="button" class="action-btn" data-action="addPreventiveBarrier" data-shortcut="b" title="PB = Preventive Barrier (förebyggande barriär) — lägg till, genväg B" aria-label="Lägg till Preventive Barrier">
             <span>+</span><span>P</span><span class="ul">B</span>
           </button>
-          <button type="button" class="action-btn" data-action="addReactiveBarrier" data-shortcut="r" title="Lägg till Reactive Barrier (R)">
+          <button type="button" class="action-btn" data-action="addReactiveBarrier" data-shortcut="r" title="RB = Reactive Barrier (reaktiv barriär) — lägg till, genväg R" aria-label="Lägg till Reactive Barrier">
             <span>+</span><span class="ul">R</span><span>B</span>
           </button>
-          <button type="button" class="action-btn" data-action="addConsequence" data-shortcut="q" title="Lägg till Consequence (Q)">
+          <button type="button" class="action-btn" data-action="addConsequence" data-shortcut="q" title="Cq = Consequence (konsekvens) — lägg till, genväg Q" aria-label="Lägg till Consequence">
             <span>+</span><span>C</span><span class="ul">q</span>
           </button>
           <button type="button" class="action-btn" data-action="setTheme" data-theme-value="light" data-shortcut="l" title="Light mode (L)">
@@ -548,6 +566,9 @@
           </button>
           <button type="button" class="action-btn" data-action="importState" title="Import diagram (JSON)">
             Import
+          </button>
+          <button type="button" class="action-btn" data-action="toggleHelp" data-shortcut="?" title="Visa genvägar och förkortningar (?)" aria-label="Visa genvägar och förkortningar" aria-haspopup="dialog">
+            ?
           </button>
           <input type="file" id="import-state-file" accept=".json,application/json" hidden />
         </div>
@@ -654,20 +675,55 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
           </section>
         </div>
 
-        <p class="hint">
-          <strong>Shortcuts</strong> —
-          Add: <strong>C</strong> Cause · <strong>B</strong> Preventive · <strong>R</strong> Reactive ·
-          <strong>Q</strong> Consequence ·
-          Theme: <strong>L</strong> Light · <strong>D</strong> Dark ·
-          Edit: <strong>Enter</strong> edit · <strong>Cmd/Ctrl+Enter</strong> select/apply ·
-          <strong>Esc</strong> undo · <strong>Shift+Enter</strong> new line ·
-          Tab/Shift+Tab navigate (no apply while selected) ·
-          Navigate: arrow keys (hover preview; select with Cmd/Ctrl+Enter) · Alt+↑↓ move row · Shift+↑↓ extend · Cmd/Ctrl+click multi-select ·
-          Backspace delete ·
-          Link mode: ←→ move column · ↑↓ browse links · 1–9 toggle link ·
-          <strong>Enter</strong> apply · <strong>Esc</strong> undo · I/P/N/T/U status · S/L/W strength.
-          Toolbar and legend keys are inactive while editing text.
-        </p>
+        <dialog class="help-dialog" id="help-dialog" aria-labelledby="help-title">
+          <button type="button" class="action-btn help-close" data-action="closeHelp" title="Stäng (Esc)">Stäng</button>
+          <h2 id="help-title">Förkortningar och genvägar</h2>
+
+          <h3>Förkortningar</h3>
+          <dl>
+            <dt>Ca</dt><dd>Cause — orsak</dd>
+            <dt>PB</dt><dd>Preventive Barrier — förebyggande barriär</dd>
+            <dt>RB</dt><dd>Reactive Barrier — reaktiv barriär</dd>
+            <dt>Cq</dt><dd>Consequence — konsekvens</dd>
+          </dl>
+
+          <h3>Lägg till och tema</h3>
+          <dl>
+            <dt>C / B / R / Q</dt><dd>Lägg till Cause / Preventive / Reactive / Consequence</dd>
+            <dt>L / D</dt><dd>Light / Dark</dd>
+          </dl>
+
+          <h3>Redigera</h3>
+          <dl>
+            <dt>Enter</dt><dd>Redigera</dd>
+            <dt>Cmd/Ctrl+Enter</dt><dd>Markera / verkställ</dd>
+            <dt>Esc</dt><dd>Ångra</dd>
+            <dt>Shift+Enter</dt><dd>Ny rad</dd>
+            <dt>Tab / Shift+Tab</dt><dd>Navigera (verkställer inte medan något är markerat)</dd>
+            <dt>Backspace</dt><dd>Ta bort</dd>
+          </dl>
+
+          <h3>Navigera</h3>
+          <dl>
+            <dt>Piltangenter</dt><dd>Förhandsvisa vid hover; markera med Cmd/Ctrl+Enter</dd>
+            <dt>Alt+↑ ↓</dt><dd>Flytta rad</dd>
+            <dt>Shift+↑ ↓</dt><dd>Utöka</dd>
+            <dt>Cmd/Ctrl+klick</dt><dd>Flervalsmarkering</dd>
+            <dt>Mellanslag + dra</dt><dd>Panorera diagrammet</dd>
+          </dl>
+
+          <h3>Länkläge (barriär markerad)</h3>
+          <dl>
+            <dt>← →</dt><dd>Flytta kolumn</dd>
+            <dt>↑ ↓</dt><dd>Bläddra bland länkar</dd>
+            <dt>1–9</dt><dd>Växla länk</dd>
+            <dt>Enter / Esc</dt><dd>Verkställ / ångra</dd>
+            <dt>I / P / N / T / U</dt><dd>Status</dd>
+            <dt>S / L / W</dt><dd>Strength</dd>
+          </dl>
+
+          <p class="help-note">Verktygsfältets och legendens tangenter är inaktiva medan text redigeras. Öppna och stäng den här rutan med <strong>?</strong>; Esc stänger den också.</p>
+        </dialog>
       </div>
     </div>
   </div>
@@ -2770,7 +2826,23 @@ lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ip
     setTheme: (btn) => setTheme(btn.dataset.themeValue),
     exportState: exportStateToFile,
     importState: () => document.getElementById("import-state-file")?.click(),
+    toggleHelp: () => {
+      const dlg = document.getElementById("help-dialog");
+      if (!dlg) return;
+      if (dlg.open) dlg.close();
+      else dlg.showModal();
+    },
+    closeHelp: () => document.getElementById("help-dialog")?.close(),
   };
+
+  // Modal help: keep keys from reaching the diagram's global shortcuts; Esc closes natively.
+  document.getElementById("help-dialog")?.addEventListener("keydown", (evt) => {
+    evt.stopPropagation();
+    if (evt.key === "?") {
+      evt.preventDefault();
+      actions.closeHelp();
+    }
+  });
 
   function flashButton(btn) {
     btn.classList.add("is-flashed");

@@ -2096,7 +2096,23 @@
     setTheme: (btn) => setTheme(btn.dataset.themeValue),
     exportState: exportStateToFile,
     importState: () => document.getElementById("import-state-file")?.click(),
+    toggleHelp: () => {
+      const dlg = document.getElementById("help-dialog");
+      if (!dlg) return;
+      if (dlg.open) dlg.close();
+      else dlg.showModal();
+    },
+    closeHelp: () => document.getElementById("help-dialog")?.close(),
   };
+
+  // Modal help: keep keys from reaching the diagram's global shortcuts; Esc closes natively.
+  document.getElementById("help-dialog")?.addEventListener("keydown", (evt) => {
+    evt.stopPropagation();
+    if (evt.key === "?") {
+      evt.preventDefault();
+      actions.closeHelp();
+    }
+  });
 
   function flashButton(btn) {
     btn.classList.add("is-flashed");
