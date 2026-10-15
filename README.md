@@ -1,6 +1,10 @@
 # Bowtie Diagram Editor
 
-**🔗 Live: [larswpettersson.github.io/hfa-bowtie/Bowtie.html](https://larswpettersson.github.io/hfa-bowtie/Bowtie.html)** · [offline-version](https://larswpettersson.github.io/hfa-bowtie/Bowtie_offline.html) (single file)
+**🔗 Live: [larswpettersson.github.io/hfa-bowtie/Bowtie.html](https://larswpettersson.github.io/hfa-bowtie/Bowtie.html)**
+
+## Offline use
+
+The editor also runs fully offline. [`Bowtie_offline.html`](https://larswpettersson.github.io/hfa-bowtie/Bowtie_offline.html) is a single self-contained HTML file (script inlined, no network needed). **[Download Bowtie_offline.html](https://larswpettersson.github.io/hfa-bowtie/Bowtie_offline.html)** (right-click → *Save link as…*), then open the saved file in any modern browser. Import/Export use local file pickers and downloads; preferences are kept in `localStorage`.
 
 A standalone HTML5 bowtie diagram editor for safety analysis, designed from Penpot components.
 
