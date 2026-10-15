@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "meta": {
+    "theme": "light",
+    "seq": {
+      "cause": 4,
+      "preventiveBarrier": 4,
+      "reactiveBarrier": 3,
+      "consequence": 3
+    }
+  },
+  "hazard": {
+    "id": "HZ",
+    "label": "Rörelseenergi hos tåg i rörelse"
+  },
+  "topEvent": {
+    "id": "TE",
+    "label": "Obehörig stoppsignalpassage (OSPA)"
+  },
+  "left": {
+    "rows": 4,
+    "barrierCols": 2,
+    "causes": [
+      {
+        "id": "C1",
+        "domId": "c-C1",
+        "idTagId": "id-C1",
+        "description": "Lokföraren tappar uppmärksamheten (trötthet, distraktion eller hög arbetsbelastning)",
+        "row": 1,
+        "connectorTarget": "id-TE"
+      },
+      {
+        "id": "C2",
+        "domId": "c-C2",
+        "idTagId": "id-C2",
+        "description": "Lokföraren uppfattar signalen fel eller förväxlar den, t.ex. förväntar sig grön signal",
+        "row": 2,
+        "connectorTarget": "id-TE"
+      },
+      {
+        "id": "C3",
+        "domId": "c-C3",
+        "idTagId": "id-C3",
+        "description": "Dålig signalsikt på grund av dimma, snö, motljus eller växtlighet vid signalen",
+        "row": 3,
+        "connectorTarget": "id-TE"
+      },
+      {
+        "id": "C4",
+        "domId": "c-C4",
+        "idTagId": "id-C4",
+        "description": "Förlängd bromssträcka på grund av låg friktion (löv eller halka på rälsen)",
+        "row": 4,
+        "connectorTarget": "id-TE"
+      }
+    ],
+    "barriers": [
+      {
+        "barrierId": "p1",
+        "id": "P1",
+        "description": "Förarutbildning, ruttkännedom samt regler för trötthet och vila",
+        "col": 2,
+        "strength": "Normal",
+        "status": "Partly Implemented",
+        "protects": [
+          "id-C1",
+          "id-C2"
+        ],
+        "everLinked": true,
+        "authoredSegments": [
+          {
+            "row": 1,
+            "rowSpan": 2,
+            "domId": "b-p1",
+            "idTagId": "id-P1"
+          }
+        ]
+      },
+      {
+        "barrierId": "p2",
+        "id": "P2",
+        "description": "Röjning av växtlighet och regelbunden besiktning av signalsikt",
+        "col": 2,
+        "strength": "Normal",
+        "status": "Implemented",
+        "protects": [
+          "id-C3"
+        ],
+        "everLinked": true,
+        "authoredSegments": [
+          {
+            "row": 3,
+            "rowSpan": 1,
+            "domId": "b-p2",
+            "idTagId": "id-P2"
+          }
+        ]
+      },
+      {
+        "barrierId": "p3",
+        "id": "P3",
+        "description": "Halkbekämpning: rälsrengöring och sandning",
+        "col": 2,
+        "strength": "Weak",
+        "status": "To be implemented",
+        "protects": [
+          "id-C4"
+        ],
+        "everLinked": true,
+        "authoredSegments": [
+          {
+            "row": 4,
+            "rowSpan": 1,
+            "domId": "b-p3",
+            "idTagId": "id-P3"
+          }
+        ]
+      },
+      {
+        "barrierId": "p4",
+        "id": "P4",
+        "description": "ATC: hastighetsövervakning och automatisk inbromsning före stoppsignal",
+        "col": 3,
+        "strength": "Strong",
+        "status": "Implemented",
+        "protects": [
+          "id-C1",
+          "id-C2",
+          "id-C3",
+          "id-C4"
+        ],
+        "everLinked": true,
+        "authoredSegments": [
+          {
+            "row": 1,
+            "rowSpan": 4,
+            "domId": "b-p4",
+            "idTagId": "id-P4"
+          }
+        ]
+      }
+    ]
+  },
+  "right": {
+    "rows": 3,
+    "barrierCols": 2,
+    "consequences": [
+      {
+        "id": "K1",
+        "domId": "c-K1",
+        "idTagId": "id-K1",
+        "description": "Kollision med annat tåg i spårkorsning eller mot mötande tåg",
+        "row": 1,
+        "connectorTarget": "id-TE"
+      },
+      {
+        "id": "K2",
+        "domId": "c-K2",
+        "idTagId": "id-K2",
+        "description": "Avsporing vid körning över växel i fel läge",
+        "row": 2,
+        "connectorTarget": "id-TE"
+      },
+      {
+        "id": "K3",
+        "domId": "c-K3",
+        "idTagId": "id-K3",
+        "description": "Trafikstörning och driftstopp på berörd bana",
+        "row": 3,
+        "connectorTarget": "id-TE"
+      }
+    ],
+    "barriers": [
+      {
+        "barrierId": "r1",
+        "id": "R1",
+        "description": "GSM-R-nödanrop: trafikledaren stoppar tågen i närområdet",
+        "col": 1,
+        "strength": "Normal",
+        "status": "Implemented",
+        "protects": [
+          "id-K1",
+          "id-K2"
+        ],
+        "everLinked": true,
+        "authoredSegments": [
+          {
+            "row": 1,
+            "rowSpan": 2,
+            "domId": "b-r1",
+            "idTagId": "id-R1"
+          }
+        ]
+      },
+      {
+        "barrierId": "r2",
+        "id": "R2",
+        "description": "Flankskydd: skyddssträcka bakom signalen och växlar i skyddsläge",
+        "col": 2,
+        "strength": "Strong",
+        "status": "Not Implemented",
+        "protects": [
+          "id-K1",
+          "id-K2"
+        ],
+        "everLinked": true,
+        "authoredSegments": [
+          {
+            "row": 1,
+            "rowSpan": 2,
+            "domId": "b-r2",
+            "idTagId": "id-R2"
+          }
+        ]
+      },
+      {
+        "barrierId": "r3",
+        "id": "R3",
+        "description": "Trafikledningens trafikstörningsplan och omplanering",
+        "col": 1,
+        "strength": "Normal",
+        "status": "Unknown",
+        "protects": [
+          "id-K3"
+        ],
+        "everLinked": true,
+        "authoredSegments": [
+          {
+            "row": 3,
+            "rowSpan": 1,
+            "domId": "b-r3",
+            "idTagId": "id-R3"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -611,30 +611,36 @@
           <section class="zone zone--left" id="zone-left" aria-label="Cause and Preventive Barriers">
             <article class="card" id="c-C1" data-kind="cause" data-row="1" data-col="1">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-C1" data-target="id-TE">C1</div>
-              <p class="desc-text" contenteditable="true" data-role="description">Description of Cause C1</p>
+              <p class="desc-text" contenteditable="true" data-role="description">Lokföraren tappar uppmärksamheten (trötthet, distraktion eller hög arbetsbelastning)</p>
             </article>
             <article class="card" id="c-C2" data-kind="cause" data-row="2" data-col="1">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-C2" data-target="id-TE">C2</div>
-              <p class="desc-text" contenteditable="true" data-role="description">Description of Cause C2
-Is several
-lines long</p>
+              <p class="desc-text" contenteditable="true" data-role="description">Lokföraren uppfattar signalen fel eller förväxlar den, t.ex. förväntar sig grön signal</p>
             </article>
             <article class="card" id="c-C3" data-kind="cause" data-row="3" data-col="1">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-C3" data-target="id-TE">C3</div>
-              <p class="desc-text" contenteditable="true" data-role="description">Description of Cause C3 has a very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very very long sentance.</p>
+              <p class="desc-text" contenteditable="true" data-role="description">Dålig signalsikt på grund av dimma, snö, motljus eller växtlighet vid signalen</p>
+            </article>
+            <article class="card" id="c-C4" data-kind="cause" data-row="4" data-col="1">
+              <div class="id-tag" contenteditable="true" data-role="id" id="id-C4" data-target="id-TE">C4</div>
+              <p class="desc-text" contenteditable="true" data-role="description">Förlängd bromssträcka på grund av låg friktion (löv eller halka på rälsen)</p>
             </article>
 
-            <div class="barrier" id="b-p1-top" data-barrier-id="p1" data-row="1" data-col="2" data-row-span="1" data-strength="Normal" data-status="Unknown">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-P1a">P1</div>
-              <p class="desc-text" contenteditable="true" data-role="description">Same text in this P1 barrier</p>
+            <div class="barrier" id="b-p1" data-barrier-id="p1" data-row="1" data-col="2" data-row-span="2" data-strength="Normal" data-status="Partly Implemented">
+              <div class="id-tag" contenteditable="true" data-role="id" id="id-P1">P1</div>
+              <p class="desc-text" contenteditable="true" data-role="description">Förarutbildning, ruttkännedom samt regler för trötthet och vila</p>
             </div>
-            <div class="barrier" id="b-p2" data-barrier-id="p2" data-row="2" data-col="3" data-row-span="2" data-strength="Normal" data-status="Partly Implemented">
+            <div class="barrier" id="b-p2" data-barrier-id="p2" data-row="3" data-col="2" data-row-span="1" data-strength="Normal" data-status="Implemented">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-P2">P2</div>
-              <p class="desc-text" contenteditable="true" data-role="description">barrier P2  is differnt and has some extremly long words like Counterdemonstration and Electroencephalograph that need hyphenation</p>
+              <p class="desc-text" contenteditable="true" data-role="description">Röjning av växtlighet och regelbunden besiktning av signalsikt</p>
             </div>
-            <div class="barrier" id="b-p1-bot" data-barrier-id="p1" data-row="3" data-col="2" data-row-span="1" data-strength="Normal" data-status="Unknown">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-P1b">P1</div>
-              <p class="desc-text" contenteditable="true" data-role="description">Same text in this P1 barrier</p>
+            <div class="barrier" id="b-p3" data-barrier-id="p3" data-row="4" data-col="2" data-row-span="1" data-strength="Weak" data-status="To be implemented">
+              <div class="id-tag" contenteditable="true" data-role="id" id="id-P3">P3</div>
+              <p class="desc-text" contenteditable="true" data-role="description">Halkbekämpning: rälsrengöring och sandning</p>
+            </div>
+            <div class="barrier" id="b-p4" data-barrier-id="p4" data-row="1" data-col="3" data-row-span="4" data-strength="Strong" data-status="Implemented">
+              <div class="id-tag" contenteditable="true" data-role="id" id="id-P4">P4</div>
+              <p class="desc-text" contenteditable="true" data-role="description">ATC: hastighetsövervakning och automatisk inbromsning före stoppsignal</p>
             </div>
           </section>
 
@@ -643,34 +649,41 @@ lines long</p>
               <div class="hazard">
                 <span class="label">Hazard</span>
                 <span id="id-HZ" hidden tabindex="-1" aria-hidden="true"></span>
-                <p class="desc-text" contenteditable="true" data-role="description"></p>
+                <p class="desc-text" contenteditable="true" data-role="description">Rörelseenergi hos tåg i rörelse</p>
               </div>
               <div class="top-event">
                 <span class="label">Top Event</span>
                 <span id="id-TE" hidden tabindex="-1" aria-hidden="true"></span>
-                <p class="desc-text" contenteditable="true" data-role="description"></p>
+                <p class="desc-text" contenteditable="true" data-role="description">Obehörig stoppsignalpassage (OSPA)</p>
               </div>
             </div>
           </section>
 
           <section class="zone zone--right" id="zone-right" aria-label="Reactive Barriers and Consequences">
-            <div class="barrier" id="b-r1" data-barrier-id="r1" data-row="1" data-col="1" data-row-span="2" data-strength="Normal" data-status="To be implemented">
+            <div class="barrier" id="b-r1" data-barrier-id="r1" data-row="1" data-col="1" data-row-span="2" data-strength="Normal" data-status="Implemented">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-R1">R1</div>
-              <p class="desc-text" contenteditable="true" data-role="description">barrier R1 lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc </p>
+              <p class="desc-text" contenteditable="true" data-role="description">GSM-R-nödanrop: trafikledaren stoppar tågen i närområdet</p>
             </div>
-            <div class="barrier" id="b-r2" data-barrier-id="r2" data-row="2" data-col="2" data-row-span="1" data-strength="Normal" data-status="Unknown">
+            <div class="barrier" id="b-r2" data-barrier-id="r2" data-row="1" data-col="2" data-row-span="2" data-strength="Strong" data-status="Not Implemented">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-R2">R2</div>
-              <p class="desc-text" contenteditable="true" data-role="description">Barrier R2 lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc</p>
+              <p class="desc-text" contenteditable="true" data-role="description">Flankskydd: skyddssträcka bakom signalen och växlar i skyddsläge</p>
+            </div>
+            <div class="barrier" id="b-r3" data-barrier-id="r3" data-row="3" data-col="1" data-row-span="1" data-strength="Normal" data-status="Unknown">
+              <div class="id-tag" contenteditable="true" data-role="id" id="id-R3">R3</div>
+              <p class="desc-text" contenteditable="true" data-role="description">Trafikledningens trafikstörningsplan och omplanering</p>
             </div>
 
             <article class="card" id="c-K1" data-kind="consequence" data-row="1" data-col="3">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-K1" data-target="id-TE">K1</div>
-              <p class="desc-text" contenteditable="true" data-role="description">lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc 
-lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc </p>
+              <p class="desc-text" contenteditable="true" data-role="description">Kollision med annat tåg i spårkorsning eller mot mötande tåg</p>
             </article>
             <article class="card" id="c-K2" data-kind="consequence" data-row="2" data-col="3">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-K2" data-target="id-TE">K2</div>
-              <p class="desc-text" contenteditable="true" data-role="description">lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc lorem ipsum dolores etc </p>
+              <p class="desc-text" contenteditable="true" data-role="description">Avsporing vid körning över växel i fel läge</p>
+            </article>
+            <article class="card" id="c-K3" data-kind="consequence" data-row="3" data-col="3">
+              <div class="id-tag" contenteditable="true" data-role="id" id="id-K3" data-target="id-TE">K3</div>
+              <p class="desc-text" contenteditable="true" data-role="description">Trafikstörning och driftstopp på berörd bana</p>
             </article>
           </section>
         </div>
