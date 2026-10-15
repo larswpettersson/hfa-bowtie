@@ -1,5 +1,7 @@
 # Bowtie Diagram Editor
 
+**🔗 Live: [larswpettersson.github.io/hfa-bowtie/Bowtie.html](https://larswpettersson.github.io/hfa-bowtie/Bowtie.html)** · [offline-version](https://larswpettersson.github.io/hfa-bowtie/Bowtie_offline.html) (single file)
+
 A standalone HTML5 bowtie diagram editor for safety analysis, designed from Penpot components.
 
 ## 📁 Files
