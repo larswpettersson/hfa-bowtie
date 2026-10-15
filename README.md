@@ -100,3 +100,7 @@ This project uses Penpot for design and can be developed with Cursor + Penpot MC
 ---
 
 **Created from Penpot components** | **Designed for Safety Analysis** | **Mobile-Friendly**
+
+## License
+
+[MIT](LICENSE) © 2026 Lars Pettersson
