@@ -2488,6 +2488,22 @@
   render(state);
   buildConnectors();
 
+  /** Replace the diagram (used by the AI panel); keeps the current theme, throws on validation errors. */
+  function replaceState(raw) {
+    const next = normalizeImportedState(raw);
+    next.meta.theme = state.meta.theme;
+    const { errors } = validateImportState(next);
+    if (errors.length) throw new Error(formatImportValidationMessage(errors, []));
+    applyState(next);
+  }
+
+  window.BowtieEditor = {
+    getState: () => serializeState(),
+    replaceState,
+    // Selected cards / hazard / top event (dom ids) and the barrier in link mode.
+    getSelection: () => ({ ids: [...ui.selectedIds], barrierId: ui.activeBarrierId }),
+  };
+
   const importStateInput = document.getElementById("import-state-file");
   if (importStateInput) {
     importStateInput.addEventListener("change", () => {

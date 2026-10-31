@@ -736,6 +736,7 @@
           <dl>
             <dt>C / B / R / Q</dt><dd>Lägg till Cause / Preventive / Reactive / Consequence</dd>
             <dt>L / D</dt><dd>Light / Dark</dd>
+            <dt>A</dt><dd>Öppna / stäng AI-analyspanelen</dd>
           </dl>
 
           <h3>Redigera</h3>
@@ -3263,6 +3264,22 @@
   render(state);
   buildConnectors();
 
+  /** Replace the diagram (used by the AI panel); keeps the current theme, throws on validation errors. */
+  function replaceState(raw) {
+    const next = normalizeImportedState(raw);
+    next.meta.theme = state.meta.theme;
+    const { errors } = validateImportState(next);
+    if (errors.length) throw new Error(formatImportValidationMessage(errors, []));
+    applyState(next);
+  }
+
+  window.BowtieEditor = {
+    getState: () => serializeState(),
+    replaceState,
+    // Selected cards / hazard / top event (dom ids) and the barrier in link mode.
+    getSelection: () => ({ ids: [...ui.selectedIds], barrierId: ui.activeBarrierId }),
+  };
+
   const importStateInput = document.getElementById("import-state-file");
   if (importStateInput) {
     importStateInput.addEventListener("change", () => {
@@ -3310,6 +3327,1102 @@
     positionAllConnectors();
   });
   [zoneLeft, zoneCenter, zoneRight, bowtie].forEach((n) => ro.observe(n));
+})();
+
+</script>
+  <script>
+/*
+  HFA AI assistant — a side panel that sends the tool's current analysis to an LLM and can apply its proposals.
+
+  Ported from the HFA STPA Workbench (hfa-stpa/workbench/index.html, sections 4 and 6): the same provider adapters
+  (Anthropic Claude, Google Gemini, local Ollama / LM Studio / LocalAI), the same model picker, streaming, Markdown
+  rendering, foldable answers and Markdown export. The same file is used by hfa-hta and hfa-bowtie; keep the copies equal.
+
+  The host tool mounts it with an adapter:
+
+    HFAAssist.mount({
+      id: "hta",                       // localStorage prefix for the per-tool settings (system prompt, panel width)
+      title: "HTA analysis",
+      toolbar: element,                // the "AI" toggle button is appended here
+      buttonClass: "action-btn",
+      systemPrompt: "…",               // editable default system prompt
+      schemaPrompt: "…",               // appended after the (editable) system prompt: data model + patch format
+      contextLabel: "Current HTA (JSON)",
+      getContext: () => object,        // the analysis sent with every question
+      getScope: () => null | { label, items },   // the selection; items is sent as JSON with the question
+      quickActions: [[label, prompt], …],
+      inspect: (obj) => null | { title, applyLabel },   // is a ```json block in an answer something we can apply?
+      apply: (obj) => string,          // apply it; returns a status message, throws on error
+      snapshot: () => any, restore: (snap) => void,     // "Revert" after an applied proposal
+      welcome: "Markdown",
+      exportName: "hta-analysis",
+    });
+
+  Provider settings (keys, models, endpoint) are shared by the HFA tools under "hfa-ai:providers", because the tools are
+  served from one origin. On first use the keys saved by the STPA workbench ("hfa-stpa:settings") are picked up.
+*/
+(function () {
+  "use strict";
+
+  /* ── Storage (guarded: private windows can throw) ─────────────────────── */
+  const store = {
+    get(k, fallback = null) { try { const v = localStorage.getItem(k); return v === null ? fallback : JSON.parse(v); } catch { return fallback; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+  };
+  const PROVIDER_KEY = "hfa-ai:providers";
+  const clamp = (v, lo, hi, d) => (v === null || v === undefined || v === "" || !Number.isFinite(+v)) ? d : Math.min(hi, Math.max(lo, +v));
+  const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; };
+
+  function download(filename, text, type) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     Provider adapters (same as the STPA workbench)
+     callLLM() takes a provider-neutral conversation and returns { text, raw, usage }.
+     ═══════════════════════════════════════════════════════════════════════ */
+  const DEFAULTS = {
+    claude_model: "claude-opus-5-5",
+    gemini_model: "gemini-2.5-pro",
+    local_endpoint: "http://localhost:11434/v1/chat/completions",
+    local_model: "llama3.1",
+    claude_max_tokens: 64000,
+  };
+
+  /* maxOut caps max_tokens; effort lists the accepted levels (null: don't send output_config); fallback marks the
+     models that take server-side refusal fallback (fallbacks: "default"). */
+  const EFFORT_ALL = ["low", "medium", "high", "xhigh", "max"], EFFORT_46 = ["low", "medium", "high", "max"];
+  const CLAUDE_MODELS = [
+    { id: "claude-fable-5-1", family: "Fable", label: "Fable 5.1", maxOut: 128000, effort: EFFORT_ALL, fallback: true },
+    { id: "claude-fable-5", family: "Fable", label: "Fable 5", maxOut: 128000, effort: EFFORT_ALL },
+    { id: "claude-opus-5-5", family: "Opus", label: "Opus 5.5", maxOut: 128000, effort: EFFORT_ALL, fallback: true },
+    { id: "claude-opus-5", family: "Opus", label: "Opus 5", maxOut: 128000, effort: EFFORT_ALL, fallback: true },
+    { id: "claude-opus-4-8", family: "Opus", label: "Opus 4.8", maxOut: 128000, effort: EFFORT_ALL },
+    { id: "claude-opus-4-7", family: "Opus", label: "Opus 4.7", maxOut: 128000, effort: EFFORT_ALL },
+    { id: "claude-opus-4-6", family: "Opus", label: "Opus 4.6", maxOut: 128000, effort: EFFORT_46 },
+    { id: "claude-sonnet-5-5", family: "Sonnet", label: "Sonnet 5.5", maxOut: 128000, effort: EFFORT_ALL, fallback: true },
+    { id: "claude-sonnet-5", family: "Sonnet", label: "Sonnet 5", maxOut: 128000, effort: EFFORT_ALL },
+    { id: "claude-sonnet-4-6", family: "Sonnet", label: "Sonnet 4.6", maxOut: 128000, effort: EFFORT_46 },
+    { id: "claude-haiku-5-5", family: "Haiku", label: "Haiku 5.5", maxOut: 128000, effort: EFFORT_ALL },
+    { id: "claude-haiku-4-5", family: "Haiku", label: "Haiku 4.5", maxOut: 64000, effort: null },
+  ];
+  const GEMINI_MODELS = ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+  const CLAUDE_HEADERS = (key) => ({ "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" });
+
+  let settings = {};
+
+  /** Read an Anthropic SSE stream into { content, stop_reason, stop_details, usage }. onText(chars) reports progress. */
+  async function readClaudeStream(res, onText) {
+    if (!res.ok) return readJson(res); // throws with the API's error message
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    const blocks = [], at = new Map(), usage = {};
+    let buf = "", chars = 0, stop_reason = null, stop_details = null;
+    const handle = (ev) => {
+      if (ev.type === "message_start") Object.assign(usage, ev.message?.usage);
+      else if (ev.type === "content_block_start") at.set(ev.index, blocks.push({ ...ev.content_block, text: ev.content_block?.text || "" }) - 1);
+      else if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
+        const b = blocks[at.get(ev.index)]; if (b) b.text += ev.delta.text;
+        chars += ev.delta.text.length; onText?.(chars);
+      } else if (ev.type === "message_delta") {
+        stop_reason = ev.delta?.stop_reason ?? stop_reason;
+        stop_details = ev.delta?.stop_details ?? stop_details;
+        Object.assign(usage, ev.usage);
+      } else if (ev.type === "error") throw new Error(ev.error?.message || "stream error");
+    };
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const data = buf.slice(0, i).split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trimStart()).join("\n");
+        buf = buf.slice(i + 2);
+        if (!data) continue;
+        let ev; try { ev = JSON.parse(data); } catch { continue; }
+        handle(ev);
+      }
+    }
+    return { content: blocks, stop_reason, stop_details, usage };
+  }
+
+  async function readJson(res) {
+    const raw = await res.text();
+    let data; try { data = JSON.parse(raw); } catch { data = null; }
+    if (!res.ok) {
+      const msg = data?.error?.message || data?.error || raw.slice(0, 500) || res.statusText;
+      throw new Error(`HTTP ${res.status}: ${typeof msg === "string" ? msg : JSON.stringify(msg)}`);
+    }
+    if (data === null) throw new Error("Response was not JSON: " + raw.slice(0, 300));
+    return data;
+  }
+
+  /** A bare OpenAI-compatible base URL (…/v1) gets /chat/completions appended; full chat endpoints and Ollama's
+      native /api/chat and /api/generate are used as given. */
+  function localChatUrl(endpoint) {
+    const u = new URL(endpoint);
+    if (!/\/(chat\/completions|completions|api\/chat|api\/generate)\/?$/.test(u.pathname))
+      u.pathname = u.pathname.replace(/\/$/, "") + "/chat/completions";
+    return u.href;
+  }
+
+  /** …/chat/completions → …/models (OpenAI-compatible), …/api/chat or …/api/generate → …/api/tags (Ollama native). */
+  function localModelsUrl(endpoint) {
+    const u = new URL(endpoint);
+    if (/\/api\/(chat|generate)\/?$/.test(u.pathname)) u.pathname = u.pathname.replace(/\/api\/(chat|generate)\/?$/, "/api/tags");
+    else u.pathname = u.pathname.replace(/\/chat\/completions\/?$|\/completions\/?$/, "").replace(/\/$/, "") + "/models";
+    return u.href;
+  }
+
+  /** Ask the provider which models it serves. Returns [{ id, label }]. */
+  async function listModels(provider) {
+    const cfg = settings;
+    if (provider === "claude") {
+      if (!cfg.claude_key) throw new Error("no API key");
+      const out = [];
+      for (let after = null; ;) {
+        const q = new URLSearchParams({ limit: "1000" }); if (after) q.set("after_id", after);
+        const data = await readJson(await fetch("https://api.anthropic.com/v1/models?" + q, { headers: CLAUDE_HEADERS(cfg.claude_key) }));
+        (data.data || []).forEach((m) => out.push({ id: m.id, label: m.display_name || m.id }));
+        if (!data.has_more || !data.last_id) return out;
+        after = data.last_id;
+      }
+    }
+    if (provider === "gemini") {
+      if (!cfg.gemini_key) throw new Error("no API key");
+      const out = [];
+      for (let page = ""; ;) {
+        const q = new URLSearchParams({ pageSize: "1000" }); if (page) q.set("pageToken", page);
+        const data = await readJson(await fetch("https://generativelanguage.googleapis.com/v1beta/models?" + q, { headers: { "x-goog-api-key": cfg.gemini_key } }));
+        (data.models || []).filter((m) => (m.supportedGenerationMethods || []).includes("generateContent"))
+          .forEach((m) => { const id = m.name.replace(/^models\//, ""); out.push({ id, label: m.displayName || id }); });
+        if (!data.nextPageToken) return out;
+        page = data.nextPageToken;
+      }
+    }
+    if (provider === "local") {
+      const headers = {}; if (cfg.local_key) headers.authorization = "Bearer " + cfg.local_key;
+      const data = await readJson(await fetch(localModelsUrl(cfg.local_endpoint || DEFAULTS.local_endpoint), { headers }));
+      const list = data.data || data.models || [];
+      return list.map((m) => { const id = m.id || m.name || m.model; return { id, label: id }; }).filter((m) => m.id)
+        .sort((a, b) => a.id.localeCompare(b.id));
+    }
+    throw new Error("Unknown provider: " + provider);
+  }
+
+  async function callLLM({ provider, systemPrompt, messages, signal, onProgress }) {
+    const cfg = settings;
+
+    if (provider === "claude") {
+      if (!cfg.claude_key) throw new Error("Add an Anthropic API key in Settings.");
+      const headers = { "content-type": "application/json", ...CLAUDE_HEADERS(cfg.claude_key) };
+      const model = cfg.claude_model || DEFAULTS.claude_model;
+      const info = CLAUDE_MODELS.find((x) => x.id === model); // unknown (custom) ids get the request as configured
+      const want = clamp(cfg.claude_max_tokens, 1024, 128000, DEFAULTS.claude_max_tokens);
+      const body = {
+        model,
+        max_tokens: Math.min(want, info?.maxOut ?? want),
+        stream: true, // long answers (a whole revised analysis) outlast a non-streaming request
+        cache_control: { type: "ephemeral" }, // the system prompt + analysis repeat on every question
+        system: systemPrompt,
+        messages,
+      };
+      if (!info || info.effort) {
+        const effort = cfg.claude_effort || "medium";
+        body.output_config = { effort: !info || info.effort.includes(effort) ? effort : "high" };
+      }
+      if (cfg.claude_fallbacks && (!info || info.fallback)) { // re-run declined requests on a fallback model, server-side
+        headers["anthropic-beta"] = "server-side-fallback-2026-07-01";
+        body.fallbacks = "default";
+      }
+      const data = await readClaudeStream(await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers, body: JSON.stringify(body), signal }), onProgress);
+      // Thinking blocks may precede the answer, so join every text block instead of reading content[0].
+      const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n\n");
+      if (data.stop_reason === "refusal") {
+        const why = data.stop_details?.explanation || data.stop_details?.category || "no details";
+        return { text: (text ? text + "\n\n" : "") + `_The model declined this request (${why})._`, raw: data };
+      }
+      if (data.stop_reason === "max_tokens")
+        return { text: text + `\n\n_…output truncated at ${body.max_tokens} tokens. Narrow the scope (select the elements to focus on), ask for a patch, or raise Max output tokens in Settings._`, raw: data, usage: data.usage };
+      return { text: text || JSON.stringify(data), raw: data, usage: data.usage };
+    }
+
+    if (provider === "gemini") {
+      if (!cfg.gemini_key) throw new Error("Add a Gemini API key in Settings.");
+      const model = encodeURIComponent(cfg.gemini_model || DEFAULTS.gemini_model);
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+      const body = {
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+      };
+      const data = await readJson(await fetch(url, {
+        method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": cfg.gemini_key }, body: JSON.stringify(body), signal,
+      }));
+      const cand = data.candidates?.[0];
+      const text = (cand?.content?.parts || []).map((p) => p.text || "").join("");
+      if (!text && (data.promptFeedback?.blockReason || cand?.finishReason)) return { text: `_No answer (${data.promptFeedback?.blockReason || cand.finishReason})._`, raw: data };
+      return { text: text || JSON.stringify(data), raw: data };
+    }
+
+    if (provider === "local") {
+      const endpoint = localChatUrl(cfg.local_endpoint || DEFAULTS.local_endpoint);
+      const model = cfg.local_model || DEFAULTS.local_model;
+      const headers = { "content-type": "application/json" };
+      if (cfg.local_key) headers.authorization = "Bearer " + cfg.local_key;
+      const post = (body) => fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body), signal }).then(readJson);
+
+      if (/\/api\/generate\/?$/.test(endpoint)) { // Ollama native, single prompt
+        const prompt = messages.map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`).join("\n\n") + "\n\nAssistant:";
+        const data = await post({ model, system: systemPrompt, prompt, stream: false });
+        return { text: data.response ?? JSON.stringify(data), raw: data };
+      }
+      const chat = [{ role: "system", content: systemPrompt }, ...messages];
+      if (/\/api\/chat\/?$/.test(endpoint)) { // Ollama native chat
+        const data = await post({ model, messages: chat, stream: false });
+        return { text: data.message?.content ?? JSON.stringify(data), raw: data };
+      }
+      const data = await post({ model, messages: chat }); // OpenAI-compatible
+      return { text: data.choices?.[0]?.message?.content ?? JSON.stringify(data), raw: data };
+    }
+
+    throw new Error("Unknown provider: " + provider);
+  }
+
+  /* ── Safe Markdown → DOM (all text is escaped first; no raw HTML from the model) ── */
+  const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  function inline(s) {
+    return esc(s)
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
+      .replace(/(^|\W)_([^_\s][^_]*)_(?=\W|$)/g, "$1<em>$2</em>");
+  }
+  function renderMarkdown(md) {
+    const out = []; const lines = md.replace(/\r\n/g, "\n").split("\n");
+    let i = 0, list = null;
+    const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+    while (i < lines.length) {
+      const line = lines[i];
+      const fence = /^```(\w*)\s*$/.exec(line);
+      if (fence) {
+        closeList();
+        const buf = []; i++;
+        while (i < lines.length && !/^```\s*$/.test(lines[i])) buf.push(lines[i++]);
+        i++;
+        out.push(`<pre data-lang="${esc(fence[1])}"><code>${esc(buf.join("\n"))}</code></pre>`);
+        continue;
+      }
+      if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
+        closeList();
+        const cells = (l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => inline(c.trim()));
+        let html = "<table><thead><tr>" + cells(line).map((c) => `<th>${c}</th>`).join("") + "</tr></thead><tbody>";
+        i += 2;
+        while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) html += "<tr>" + cells(lines[i++]).map((c) => `<td>${c}</td>`).join("") + "</tr>";
+        out.push(html + "</tbody></table>");
+        continue;
+      }
+      const h = /^(#{1,6})\s+(.*)$/.exec(line);
+      if (h) { closeList(); const lv = Math.min(5, h[1].length + 2); out.push(`<h${lv}>${inline(h[2])}</h${lv}>`); i++; continue; }
+      const li = /^\s*([-*]|\d+[.)])\s+(.*)$/.exec(line);
+      if (li) {
+        const kind = /\d/.test(li[1]) ? "ol" : "ul";
+        if (list !== kind) { closeList(); out.push(`<${kind}>`); list = kind; }
+        out.push(`<li>${inline(li[2])}</li>`); i++; continue;
+      }
+      if (!line.trim()) { closeList(); i++; continue; }
+      closeList();
+      const para = [line]; i++;
+      while (i < lines.length && lines[i].trim() && !/^(```|#{1,6}\s|\s*([-*]|\d+[.)])\s|\s*\|)/.test(lines[i])) para.push(lines[i++]);
+      out.push(`<p>${inline(para.join(" "))}</p>`);
+    }
+    closeList();
+    return out.join("");
+  }
+
+  /* ── Styles (use the host's --color-* tokens from HFA DS; body[data-theme] switches them) ── */
+  const CSS = `
+  body.ai-open { margin-right: var(--ai-w, 440px); }
+  .ai-panel { position: fixed; top: 0; right: 0; bottom: 0; width: var(--ai-w, 440px); z-index: 50; display: flex; flex-direction: column;
+    background: var(--color-background-elevated); color: var(--color-foreground); border-left: 1px solid var(--color-foreground-subtle);
+    font: 14px/1.45 var(--font-sans, system-ui, sans-serif); box-shadow: -6px 0 18px rgba(0,0,0,.12); }
+  .ai-panel[hidden] { display: none; }
+  .ai-panel *, .ai-settings * { box-sizing: border-box; }
+  .ai-panel button, .ai-settings button { font: inherit; font-size: 13px; padding: 4px 10px; color: var(--color-foreground);
+    background: var(--color-background-base); border: 1px solid var(--color-foreground-subtle); border-radius: 6px; cursor: pointer; }
+  .ai-panel button:hover:not(:disabled), .ai-settings button:hover { border-color: var(--color-foreground); }
+  .ai-panel button:disabled { opacity: .45; cursor: not-allowed; }
+  .ai-panel button.primary { background: var(--color-brand-primary, #d70000); border-color: var(--color-brand-primary, #d70000); color: #fff; }
+  .ai-panel select, .ai-panel textarea, .ai-settings input, .ai-settings select, .ai-settings textarea { font: inherit; font-size: 13px;
+    color: var(--color-foreground); background: var(--color-background-base); border: 1px solid var(--color-foreground-subtle); border-radius: 6px; padding: 4px 6px; }
+  .ai-resize { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; }
+  .ai-resize:hover, .ai-resize:focus-visible { background: color-mix(in srgb, var(--color-foreground) 15%, transparent); outline: none; }
+  .ai-head { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--color-foreground-subtle); }
+  .ai-head strong { font-size: 15px; margin-right: auto; }
+  .ai-pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--color-foreground-subtle); color: var(--color-foreground-muted); }
+  .ai-quick { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px solid var(--color-foreground-subtle); }
+  .ai-quick button { font-size: 12px; padding: 3px 8px; }
+  .ai-scope { font-size: 12px; color: var(--color-foreground-muted); padding: 6px 10px; border-bottom: 1px solid var(--color-foreground-subtle);
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .ai-scope strong { color: var(--color-foreground); font-weight: 600; }
+  .ai-scope label { display: inline-flex; gap: 4px; align-items: center; }
+  .ai-scope .folds { display: inline-flex; gap: 6px; margin-left: auto; }
+  .ai-scope .folds button { padding: 2px 8px; font-size: 12px; }
+  .ai-logwrap { position: relative; flex: 1; min-height: 120px; display: flex; flex-direction: column; }
+  .ai-log { flex: 1; min-height: 0; overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+  .ai-log > * { flex: none; }
+  .ai-tobottom { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); width: 32px; height: 32px; padding: 0 !important;
+    border-radius: 50% !important; box-shadow: 0 2px 8px rgba(0,0,0,.2); font-size: 16px; line-height: 1; }
+  .ai-tobottom[hidden] { display: none; }
+  .ai-msg { border: 1px solid var(--color-foreground-subtle); border-radius: 6px; padding: 8px 12px; max-width: 100%; overflow-x: auto; }
+  .ai-msg.user { background: color-mix(in srgb, var(--color-brand-primary, #d70000) 10%, var(--color-background-elevated)); align-self: flex-end; max-width: 90%; white-space: pre-wrap; }
+  .ai-msg.assistant { background: var(--color-background-elevated); }
+  .ai-msg.error { background: color-mix(in srgb, #c70039 14%, var(--color-background-elevated)); white-space: pre-wrap; }
+  .ai-msg .meta { font-size: 11px; color: var(--color-foreground-subtle); margin-bottom: 4px; }
+  .ai-msg .meta .fold { border: 0; background: none; padding: 0 4px; margin-left: 2px; font-size: 11px; color: var(--color-foreground-muted); }
+  .ai-msg .gist { display: none; color: var(--color-foreground-muted); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ai-msg.folded .gist { display: block; }
+  .ai-msg.folded > .body { display: none; }
+  .ai-msg pre, .ai-card pre { background: var(--color-background-sunken); padding: 8px; border-radius: 4px; overflow: auto;
+    font: 12px/1.45 var(--font-mono, ui-monospace, monospace); margin: 6px 0; }
+  .ai-msg code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; }
+  .ai-msg table { border-collapse: collapse; margin: 6px 0; font-size: 13px; }
+  .ai-msg th, .ai-msg td { border: 1px solid var(--color-foreground-subtle); padding: 3px 6px; text-align: left; vertical-align: top; }
+  .ai-msg th { background: var(--color-background-sunken); }
+  .ai-msg h3, .ai-msg h4, .ai-msg h5 { margin: 10px 0 4px; }
+  .ai-msg p { margin: 6px 0; }
+  .ai-msg ul, .ai-msg ol { margin: 4px 0; padding-left: 22px; }
+  .ai-card { border: 1px solid var(--color-foreground-subtle); border-radius: 6px; background: var(--color-background-base); padding: 8px 12px; margin: 6px 0; }
+  .ai-card .head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .ai-card .head strong { margin-right: auto; font-size: 13px; }
+  .ai-card .head button { padding: 3px 10px; font-size: 12px; }
+  .ai-card summary { cursor: pointer; font-size: 12px; color: var(--color-foreground-muted); margin-top: 6px; }
+  .ai-status { font-size: 12px; color: var(--color-foreground-muted); padding: 0 10px 4px; min-height: 18px; }
+  .ai-chat { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--color-foreground-subtle); }
+  .ai-chat textarea { resize: vertical; min-height: 54px; max-height: 220px; width: 100%; }
+  .ai-chat .row { display: flex; gap: 6px; align-items: center; }
+  .ai-chat select { flex: 1; min-width: 0; }
+  .ai-settings { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 16px 18px; color: var(--color-foreground);
+    background: var(--color-background-elevated); border: 1px solid var(--color-foreground-subtle); border-radius: 8px; font: 14px/1.45 var(--font-sans, system-ui, sans-serif); }
+  .ai-settings::backdrop { background: rgba(0,0,0,.4); }
+  .ai-settings h2 { font-size: 16px; margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  .ai-settings fieldset { border: 1px solid var(--color-foreground-subtle); border-radius: 6px; margin: 0 0 12px; padding: 8px 10px 10px; }
+  .ai-settings fieldset[data-provider]:not(.active) { opacity: .6; }
+  .ai-settings fieldset.active { border-color: var(--color-brand-primary, #d70000); }
+  .ai-settings legend { font-weight: 600; padding: 0 4px; }
+  .ai-settings label { display: grid; gap: 2px; font-size: 13px; margin-bottom: 8px; }
+  .ai-settings label.inline { display: flex; gap: 6px; align-items: center; }
+  .ai-settings textarea { min-height: 180px; width: 100%; font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; }
+  .ai-settings .hint { font-size: 12px; color: var(--color-foreground-muted); margin: 4px 0; }
+  .ai-settings .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .ai-toggle.is-active { box-shadow: inset 0 0 0 2px var(--color-brand-primary, #d70000); }
+  @media (max-width: 760px) { body.ai-open { margin-right: 0; } .ai-panel { width: 100vw; } .ai-resize { display: none; } }
+  @media print { .ai-panel, .ai-toggle { display: none !important; } body.ai-open { margin-right: 0; } }
+  `;
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     Panel
+     ═══════════════════════════════════════════════════════════════════════ */
+  function mount(cfg) {
+    const prefix = `hfa-${cfg.id}:`;
+    const MAX_W = () => Math.max(320, Math.floor(window.innerWidth * 0.7));
+
+    document.head.appendChild(el("style", { textContent: CSS }));
+
+    /* ── Markup ── */
+    const $ = {};
+    const btn = (label, props = {}) => el("button", { type: "button", textContent: label, ...props });
+    $.toggle = btn("AI", { className: `${cfg.buttonClass || ""} ai-toggle`, title: "AI analysis panel (A)", ariaLabel: "Open the AI analysis panel" });
+    $.toggle.setAttribute("aria-expanded", "false");
+    cfg.toolbar?.appendChild($.toggle);
+
+    $.panel = el("aside", { className: "ai-panel", hidden: true, ariaLabel: cfg.title });
+    $.resize = el("div", { className: "ai-resize", tabIndex: 0, title: "Drag to resize (arrow keys work too)" });
+    $.resize.setAttribute("role", "separator");
+    $.resize.setAttribute("aria-orientation", "vertical");
+    $.pill = el("span", { className: "ai-pill" });
+    $.settingsBtn = btn("Settings", { title: "Provider, API key, model and system prompt" });
+    $.close = btn("✕", { title: "Close the panel", ariaLabel: "Close the AI panel" });
+    const head = el("div", { className: "ai-head" }, el("strong", { textContent: cfg.title }), $.pill, $.settingsBtn, $.close);
+    $.quick = el("div", { className: "ai-quick" });
+    $.scopeText = el("span");
+    $.keep = el("input", { type: "checkbox" });
+    $.foldAll = btn("Compress", { title: "Fold every answer to one line" });
+    $.unfoldAll = btn("Expand", { title: "Open every answer" });
+    $.clear = btn("Clear", { title: "Clear the conversation" });
+    $.saveLog = btn("Export .md", { title: "Download the conversation as Markdown" });
+    const scope = el("div", { className: "ai-scope" }, $.scopeText,
+      el("label", { title: "Send the earlier questions and answers with the next question (for follow-ups)" }, $.keep, "Send earlier turns"),
+      el("span", { className: "folds" }, $.foldAll, $.unfoldAll, $.clear, $.saveLog));
+    $.log = el("div", { className: "ai-log", ariaLive: "polite" });
+    $.toBottom = btn("↓", { className: "ai-tobottom", title: "Go to the latest entry", hidden: true });
+    const logWrap = el("div", { className: "ai-logwrap" }, $.log, $.toBottom);
+    $.status = el("div", { className: "ai-status" });
+    $.prompt = el("textarea", { placeholder: "Ask about the analysis… (Ctrl/⌘+Enter sends)", ariaLabel: "Question" });
+    $.modelPick = el("select", { title: "Model for the next question", ariaLabel: "Model for the next question" });
+    $.send = btn("Send", { type: "submit", className: "primary" });
+    $.chat = el("form", { className: "ai-chat" }, $.prompt, el("div", { className: "row" }, $.modelPick, $.send));
+    $.panel.append($.resize, head, $.quick, scope, logWrap, $.status, $.chat);
+    document.body.appendChild($.panel);
+
+    /* Settings dialog */
+    const field = (label, input) => el("label", {}, label, input);
+    const f = {
+      provider: el("select", {}, new Option("Anthropic Claude", "claude"), new Option("Google Gemini", "gemini"), new Option("Local (Ollama / LM Studio / LocalAI)", "local")),
+      claude_key: el("input", { type: "password", autocomplete: "off", placeholder: "sk-ant-…" }),
+      claude_model: el("input", { type: "text" }),
+      claude_max_tokens: el("input", { type: "number", min: 1024, max: 128000, step: 1024 }),
+      claude_effort: el("select", {}, ...EFFORT_ALL.map((x) => new Option(x, x))),
+      claude_fallbacks: el("input", { type: "checkbox" }),
+      gemini_key: el("input", { type: "password", autocomplete: "off" }),
+      gemini_model: el("input", { type: "text", placeholder: DEFAULTS.gemini_model }),
+      local_endpoint: el("input", { type: "url", placeholder: DEFAULTS.local_endpoint }),
+      local_model: el("input", { type: "text", placeholder: DEFAULTS.local_model }),
+      local_key: el("input", { type: "password", autocomplete: "off", placeholder: "optional" }),
+      remember_keys: el("input", { type: "checkbox" }),
+      system_prompt: el("textarea", { spellcheck: false }),
+    };
+    const dl = (id, input) => { const list = el("datalist", { id: `${prefix}${id}` }); input.setAttribute("list", list.id); return list; };
+    const claudeList = dl("claudeModels", f.claude_model), geminiList = dl("geminiModels", f.gemini_model), localList = dl("localModels", f.local_model);
+    CLAUDE_MODELS.forEach((x) => claudeList.appendChild(new Option(x.label, x.id)));
+    GEMINI_MODELS.forEach((x) => geminiList.appendChild(new Option(x, x)));
+    $.modelsState = el("span", { className: "ai-pill" });
+    $.refreshModels = btn("Refresh model list");
+    $.forgetKeys = btn("Forget stored keys");
+    $.resetPrompt = btn("Reset to default");
+    $.closeSettings = btn("Close");
+    const fs = (provider, legend, ...kids) => { const n = el("fieldset", {}, el("legend", { textContent: legend }), ...kids); n.dataset.provider = provider; return n; };
+    $.dialog = el("dialog", { className: "ai-settings", ariaLabel: "AI settings" },
+      el("h2", {}, "AI settings", $.closeSettings),
+      field("Provider", f.provider),
+      el("div", { className: "row" }, $.refreshModels, $.modelsState),
+      el("p", { className: "hint", textContent: "Only the active provider is called. Provider settings are shared by the HFA tools (STPA, HTA, Bowtie) in this browser." }),
+      fs("claude", "Anthropic Claude", field("API key", f.claude_key), field("Model", f.claude_model), claudeList,
+        field("Max output tokens", f.claude_max_tokens), field("Effort", f.claude_effort),
+        el("label", { className: "inline" }, f.claude_fallbacks, "Server-side refusal fallback (fallbacks: \"default\")"),
+        el("p", { className: "hint", textContent: "Calls api.anthropic.com directly from the browser with anthropic-dangerous-direct-browser-access. Your key is visible to anyone using this browser profile — use a restricted key." })),
+      fs("gemini", "Google Gemini", field("API key", f.gemini_key), field("Model", f.gemini_model), geminiList,
+        el("p", { className: "hint", textContent: "Sent as the x-goog-api-key header (not in the URL)." })),
+      fs("local", "Local model", field("Endpoint", f.local_endpoint), field("Model", f.local_model), localList, field("API key", f.local_key),
+        el("p", { className: "hint", textContent: "OpenAI-compatible …/v1/chat/completions, or Ollama's /api/chat or /api/generate. For Ollama from file://, start it with OLLAMA_ORIGINS=*." })),
+      el("fieldset", {}, el("legend", { textContent: "Keys" }),
+        el("label", { className: "inline" }, f.remember_keys, "Remember API keys in this browser (localStorage)"), $.forgetKeys),
+      el("fieldset", {}, el("legend", { textContent: "System prompt" }), f.system_prompt,
+        el("p", { className: "hint", textContent: "The data model, the patch format and the current analysis are always appended." }), $.resetPrompt));
+    document.body.appendChild($.dialog);
+
+    // The hosts have single-key shortcuts on document, and clear their selection on clicks elsewhere: keep keys and
+    // clicks here from reaching them, so the selection still scopes the question when Send is pressed.
+    [$.panel, $.dialog].forEach((n) => {
+      n.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Escape" && n === $.panel && !busy) { e.preventDefault(); setOpen(false); }
+      });
+      ["click", "mousedown", "pointerdown"].forEach((t) => n.addEventListener(t, (e) => e.stopPropagation()));
+    });
+
+    /* ── Settings ── */
+    const PROVIDER_FIELDS = ["provider", "claude_key", "claude_model", "claude_max_tokens", "claude_effort", "claude_fallbacks",
+      "gemini_key", "gemini_model", "local_endpoint", "local_model", "local_key", "remember_keys"];
+    const SECRET_FIELDS = ["claude_key", "gemini_key", "local_key"];
+
+    function loadSettings() {
+      let shared = store.get(PROVIDER_KEY);
+      if (!shared) { // first use: pick up the STPA workbench's provider settings
+        const stpa = store.get("hfa-stpa:settings", {}) || {};
+        shared = Object.fromEntries(PROVIDER_FIELDS.filter((k) => stpa[k] !== undefined).map((k) => [k, stpa[k]]));
+      }
+      settings = { provider: "claude", claude_model: DEFAULTS.claude_model, claude_max_tokens: DEFAULTS.claude_max_tokens, claude_effort: "medium",
+        claude_fallbacks: true, gemini_model: DEFAULTS.gemini_model, local_endpoint: DEFAULTS.local_endpoint, local_model: DEFAULTS.local_model,
+        remember_keys: true, ...shared,
+        system_prompt: store.get(prefix + "ai-prompt") || cfg.systemPrompt,
+        keep_history: !!store.get(prefix + "ai-keep-history") };
+      Object.entries(f).forEach(([k, input]) => {
+        if (input.type === "checkbox") input.checked = !!settings[k]; else input.value = settings[k] ?? "";
+      });
+      $.keep.checked = settings.keep_history;
+      updateBadge();
+    }
+    function saveSettings() {
+      Object.entries(f).forEach(([k, input]) => { settings[k] = input.type === "checkbox" ? input.checked : k === "system_prompt" ? input.value : input.value.trim(); });
+      settings.keep_history = $.keep.checked;
+      const persisted = Object.fromEntries(PROVIDER_FIELDS.map((k) => [k, settings[k]]));
+      if (!settings.remember_keys) SECRET_FIELDS.forEach((k) => delete persisted[k]);
+      store.set(PROVIDER_KEY, persisted);
+      store.set(prefix + "ai-prompt", settings.system_prompt === cfg.systemPrompt ? null : settings.system_prompt);
+      store.set(prefix + "ai-keep-history", settings.keep_history);
+      updateBadge();
+    }
+
+    const providerLabel = () => ({
+      claude: settings.claude_model || DEFAULTS.claude_model,
+      gemini: settings.gemini_model || DEFAULTS.gemini_model,
+      local: settings.local_model || DEFAULTS.local_model,
+    })[settings.provider];
+
+    /* Models the active provider reported; null until fetched (or when the fetch failed). */
+    const fetchedModels = { claude: null, gemini: null, local: null };
+    let modelsSeq = 0;
+    async function refreshModels() {
+      const p = settings.provider, seq = ++modelsSeq;
+      $.modelsState.textContent = "loading models…";
+      try {
+        const list = await listModels(p);
+        if (seq !== modelsSeq) return;
+        fetchedModels[p] = list;
+        $.modelsState.textContent = `${list.length} models from provider`;
+      } catch (e) {
+        if (seq !== modelsSeq) return;
+        fetchedModels[p] = null;
+        $.modelsState.textContent = p === "local" ? "model list unavailable" : "built-in model list";
+        $.modelsState.title = e.message;
+      }
+      updateBadge();
+    }
+
+    /** Fill the model picker for the current provider: the provider's own list when it could be fetched, else the
+        built-in list. A custom id from Settings is kept as an extra entry. */
+    function updateBadge() {
+      const pick = $.modelPick, p = settings.provider, cur = providerLabel();
+      $.dialog.querySelectorAll("fieldset[data-provider]").forEach((n) => n.classList.toggle("active", n.dataset.provider === p));
+      $.pill.textContent = f.provider.selectedOptions[0]?.text.replace(/ \(.*\)$/, "").replace(/^(Anthropic|Google) /, "") || p;
+      pick.replaceChildren();
+      const fetched = fetchedModels[p];
+      const family = (id) => CLAUDE_MODELS.find((x) => x.id === id)?.family || "Other";
+      if (fetched) {
+        const groups = p === "claude" ? [...new Set(fetched.map((m) => family(m.id)))] : [null];
+        groups.forEach((fam) => {
+          const parent = fam && groups.length > 1 ? pick.appendChild(el("optgroup", { label: fam })) : pick;
+          fetched.filter((m) => !fam || family(m.id) === fam)
+            .forEach((m) => parent.appendChild(new Option(m.label === m.id ? m.id : `${m.label} (${m.id})`, m.id)));
+        });
+      } else if (p === "claude") {
+        [...new Set(CLAUDE_MODELS.map((x) => x.family))].forEach((fam) => {
+          const og = el("optgroup", { label: fam });
+          CLAUDE_MODELS.filter((x) => x.family === fam).forEach((x) => og.appendChild(new Option(`${x.label} (${x.id})`, x.id)));
+          pick.appendChild(og);
+        });
+      } else if (p === "gemini") GEMINI_MODELS.forEach((id) => pick.appendChild(new Option(id, id)));
+      if (![...pick.options].some((o) => o.value === cur)) pick.appendChild(new Option(p === "local" ? cur : `${cur} (custom)`, cur));
+      pick.value = cur;
+      const list = { claude: claudeList, gemini: geminiList, local: localList }[p];
+      if (list && fetched) list.replaceChildren(...fetched.map((m) => new Option(m.label, m.id)));
+    }
+
+    $.modelPick.addEventListener("change", (e) => { f[settings.provider + "_model"].value = e.target.value; saveSettings(); });
+    // Browsers only suggest datalist entries matching the field's text; empty the field while it has focus.
+    ["claude_model", "gemini_model", "local_model"].forEach((k) => {
+      const input = f[k];
+      input.addEventListener("focus", () => { input.dataset.prev = input.value; input.dataset.ph = input.placeholder; input.placeholder = input.value || input.placeholder; input.value = ""; });
+      input.addEventListener("blur", () => { if (!input.value.trim() && input.dataset.prev) { input.value = input.dataset.prev; saveSettings(); } input.placeholder = input.dataset.ph || ""; });
+    });
+    Object.values(f).forEach((input) => input.addEventListener("change", saveSettings));
+    $.keep.addEventListener("change", saveSettings);
+    ["provider", "claude_key", "gemini_key", "local_endpoint", "local_key"].forEach((k) => f[k].addEventListener("change", () => {
+      if (k === "provider" || k.startsWith(settings.provider + "_")) refreshModels();
+    }));
+    $.refreshModels.addEventListener("click", refreshModels);
+    $.forgetKeys.addEventListener("click", () => { SECRET_FIELDS.forEach((k) => { f[k].value = ""; }); saveSettings(); setStatus("Stored API keys removed."); });
+    $.resetPrompt.addEventListener("click", () => { f.system_prompt.value = cfg.systemPrompt; saveSettings(); });
+    $.settingsBtn.addEventListener("click", () => { $.dialog.showModal(); f.provider.focus(); });
+    $.closeSettings.addEventListener("click", () => $.dialog.close());
+
+    /* ── Open / close / resize ── */
+    const setWidth = (w) => {
+      const px = Math.round(Math.min(MAX_W(), Math.max(320, w)));
+      document.body.style.setProperty("--ai-w", px + "px");
+      $.resize.setAttribute("aria-valuenow", String(px));
+      return px;
+    };
+    let width = setWidth(store.get(prefix + "ai-width") || 440);
+    const relayout = () => window.dispatchEvent(new Event("resize")); // hosts redraw connectors on resize
+    function setOpen(open) {
+      $.panel.hidden = !open;
+      document.body.classList.toggle("ai-open", open);
+      $.toggle.classList.toggle("is-active", open);
+      $.toggle.setAttribute("aria-expanded", String(open));
+      store.set(prefix + "ai-open", open);
+      if (open) { updateScope(); $.prompt.focus(); }
+      relayout();
+    }
+    $.toggle.addEventListener("click", () => setOpen($.panel.hidden));
+    $.close.addEventListener("click", () => setOpen(false));
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "a" && e.key !== "A") return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = document.activeElement;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (document.querySelector("dialog[open]")) return;
+      e.preventDefault();
+      setOpen($.panel.hidden);
+    });
+    let drag = null;
+    $.resize.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, w: width }; $.resize.setPointerCapture(e.pointerId); e.preventDefault(); });
+    $.resize.addEventListener("pointermove", (e) => { if (drag) { width = setWidth(drag.w + drag.x - e.clientX); relayout(); } });
+    const endDrag = () => { if (drag) { drag = null; store.set(prefix + "ai-width", width); } };
+    $.resize.addEventListener("pointerup", endDrag);
+    $.resize.addEventListener("pointercancel", endDrag);
+    $.resize.addEventListener("keydown", (e) => {
+      const step = { ArrowLeft: 40, ArrowRight: -40 }[e.key];
+      if (step === undefined) return;
+      e.preventDefault();
+      width = setWidth(width + step); store.set(prefix + "ai-width", width); relayout();
+    });
+
+    /* ── Scope (the host's selection) ── */
+    function currentScope() {
+      try { return cfg.getScope?.() || null; } catch { return null; }
+    }
+    function updateScope() {
+      const s = currentScope();
+      $.scopeText.replaceChildren("Scope: ", el("strong", { textContent: s ? s.label : "whole analysis" }));
+    }
+    // Selection changes happen on clicks and keys in the host (which may stop propagation): listen in the capture
+    // phase and refresh the scope line once the host has handled the event.
+    ["click", "keyup"].forEach((t) => document.addEventListener(t, () => { if (!$.panel.hidden) setTimeout(updateScope, 0); }, true));
+
+    /* ── Chat loop ── */
+    let history = [];      // finished turns, sent only when "Send earlier turns" is on
+    let busy = null;       // AbortController while a request runs
+    const transcript = []; // for Markdown export
+
+    function buildSystemPrompt() {
+      const ctx = cfg.getContext();
+      return `${settings.system_prompt || cfg.systemPrompt}${cfg.schemaPrompt || ""}\n\n${cfg.contextLabel || "Current analysis (JSON)"}:\n${JSON.stringify(ctx, null, 2)}`;
+    }
+    function scopePreamble(s) {
+      if (!s) return "";
+      return `Analysis scope: I selected ${s.label}. Focus on the selected elements and their direct relations. Use the rest of the analysis only as context, and keep any change to a patch.\nSelected elements (JSON):\n${JSON.stringify(s.items, null, 2)}\n\nQuestion:\n`;
+    }
+
+    async function send(userText) {
+      if (busy || !userText.trim()) return;
+      const s = currentScope();
+      addMessage("user", userText, `Scope: ${s ? s.label : "whole analysis"}`);
+      const prior = settings.keep_history ? history : [];
+      const turn = [{ role: "user", content: scopePreamble(s) + userText }];
+      busy = new AbortController();
+      setBusy(true);
+      const model = providerLabel();
+      try {
+        setStatus(`Waiting for ${model}…`);
+        const t0 = performance.now();
+        const { text, usage } = await callLLM({ provider: settings.provider, systemPrompt: buildSystemPrompt(), messages: [...prior, ...turn], signal: busy.signal,
+          onProgress: (n) => setStatus(`Receiving from ${model}… ${n.toLocaleString()} characters`) });
+        turn.push({ role: "assistant", content: text });
+        const tokens = usage ? ` · ${(usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0)} in / ${usage.output_tokens ?? "?"} out tokens` : "";
+        addMessage("assistant", text, `${model} · ${((performance.now() - t0) / 1000).toFixed(1)} s${tokens}`);
+        history.push(...turn);
+        setStatus("");
+      } catch (e) {
+        addMessage("error", e.name === "AbortError" ? "Request cancelled." : explainError(e));
+        setStatus("");
+      } finally {
+        busy = null; setBusy(false);
+      }
+    }
+
+    function explainError(e) {
+      let msg = e.message || String(e);
+      if (e instanceof TypeError && /fetch|network/i.test(msg)) {
+        msg += settings.provider === "local"
+          ? "\nCould not reach the local endpoint. Check it is running and allows this origin (Ollama: set OLLAMA_ORIGINS=*; LM Studio: enable CORS)."
+          : "\nNetwork error — check your connection, proxy or browser extensions.";
+      }
+      return msg;
+    }
+
+    function setBusy(on) {
+      $.send.textContent = on ? "Stop" : "Send";
+      $.send.classList.toggle("primary", !on);
+      $.quick.querySelectorAll("button").forEach((b) => (b.disabled = on));
+    }
+    const setStatus = (t) => ($.status.textContent = t);
+
+    function addMessage(kind, text, meta) {
+      const div = el("div", { className: "ai-msg " + kind });
+      if (meta) div.appendChild(el("div", { className: "meta", textContent: meta }));
+      if (kind === "user" || kind === "error") div.appendChild(document.createTextNode(text));
+      else {
+        const body = el("div", { className: "body" });
+        body.innerHTML = renderMarkdown(text); // safe: renderMarkdown escapes all model text
+        div.appendChild(body);
+        if (kind === "assistant") attachJsonActions(body);
+        if (meta) addFold(div, text);
+      }
+      $.log.appendChild(div);
+      // An answer opens at its first line; questions and errors sit at the bottom.
+      div.scrollIntoView?.({ block: kind === "assistant" ? "start" : "end", behavior: "smooth" });
+      transcript.push({ kind, text, meta });
+      updateToBottom();
+    }
+
+    /** The caret after an answer's meta line folds the answer to one line of its text; the line or the caret opens it again. */
+    function addFold(div, text) {
+      const fold = btn("", { className: "fold" });
+      const gist = el("div", { className: "gist" });
+      gist.textContent = text.replace(/```[\s\S]*?```/g, " [code] ").replace(/[#*_`|>]+|:?-{3,}:?/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+      fold.addEventListener("click", () => setFolded(div, !div.classList.contains("folded")));
+      gist.addEventListener("click", () => setFolded(div, false));
+      div.querySelector(".meta").appendChild(fold);
+      div.querySelector(".body").before(gist);
+      setFolded(div, false);
+    }
+    function setFolded(div, folded) {
+      const fold = div.querySelector(".meta .fold");
+      div.classList.toggle("folded", folded);
+      fold.textContent = folded ? "▸" : "▾";
+      fold.title = folded ? "Show the answer" : "Hide the answer";
+      fold.setAttribute("aria-label", fold.title);
+      fold.setAttribute("aria-expanded", String(!folded));
+      updateToBottom();
+    }
+    const foldAll = (folded) => $.log.querySelectorAll(".ai-msg").forEach((div) => { if (div.querySelector(":scope > .meta .fold")) setFolded(div, folded); });
+    $.foldAll.addEventListener("click", () => foldAll(true));
+    $.unfoldAll.addEventListener("click", () => foldAll(false));
+
+    function updateToBottom() { $.toBottom.hidden = $.log.scrollHeight - $.log.scrollTop - $.log.clientHeight < 40; }
+    $.log.addEventListener("scroll", updateToBottom, { passive: true });
+    $.toBottom.addEventListener("click", () => $.log.scrollTo({ top: $.log.scrollHeight, behavior: "smooth" }));
+
+    /** A ```json block the host can apply becomes a card: actions on top, the JSON folded below. */
+    function attachJsonActions(body) {
+      body.querySelectorAll('pre[data-lang="json"]').forEach((pre) => {
+        let obj; try { obj = JSON.parse(pre.textContent); } catch { return; }
+        if (!obj || typeof obj !== "object") return;
+        let info; try { info = cfg.inspect(obj); } catch { info = null; }
+        if (!info) return;
+        const copy = btn("Copy JSON");
+        copy.addEventListener("click", async () => {
+          try { await navigator.clipboard.writeText(JSON.stringify(obj, null, 2)); copy.textContent = "Copied"; }
+          catch { copy.textContent = "Copy failed"; }
+        });
+        const apply = btn(info.applyLabel || "Apply", { className: "ai-apply" });
+        const revert = btn("Revert", { hidden: true, title: "Restore the analysis as it was before this was applied" });
+        let before = null;
+        apply.addEventListener("click", () => {
+          if (info.confirm && !confirm(info.confirm)) return;
+          try {
+            before = cfg.snapshot();
+            const msg = cfg.apply(obj);
+            if (msg === false) { before = null; return; }
+            apply.textContent = "Applied"; apply.disabled = true; revert.hidden = false;
+            setStatus(msg || "Applied.");
+            updateScope();
+          } catch (e) {
+            before = null;
+            setStatus("Could not apply: " + (e.message || e));
+          }
+        });
+        revert.addEventListener("click", () => {
+          if (before === null) return;
+          cfg.restore(before); before = null;
+          revert.hidden = true; apply.disabled = false; apply.textContent = info.applyLabel || "Apply";
+          setStatus("Reverted.");
+        });
+        const card = el("div", { className: "ai-card" }, el("div", { className: "head" }, el("strong", { textContent: info.title }), copy, apply, revert));
+        pre.before(card);
+        const details = el("details", {}, el("summary", { textContent: "Show JSON" }));
+        details.append(pre);
+        card.append(details);
+      });
+    }
+
+    function renderQuick() {
+      $.quick.replaceChildren(...(cfg.quickActions || []).map(([label, prompt]) => {
+        const b = btn(label, { title: prompt });
+        b.addEventListener("click", () => send(prompt));
+        return b;
+      }));
+    }
+
+    $.chat.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (busy) { busy.abort(); return; }
+      const t = $.prompt.value; $.prompt.value = ""; send(t);
+    });
+    $.prompt.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $.chat.requestSubmit(); });
+    $.clear.addEventListener("click", () => { if (busy) busy.abort(); history = []; transcript.length = 0; $.log.replaceChildren(); setStatus(""); updateToBottom(); });
+    $.saveLog.addEventListener("click", () => {
+      const md = [`# ${cfg.title}`, "", `_Exported ${new Date().toISOString()} · ${providerLabel()}_`, "",
+        "## Analysis", "", "```json", JSON.stringify(cfg.getContext(), null, 2), "```", "",
+        ...transcript.map((t) => t.kind === "user" ? `## ▶ ${t.text}\n` : `${t.meta ? `_${t.meta}_\n\n` : ""}${t.text}\n`)].join("\n");
+      download(`${cfg.exportName || cfg.id + "-analysis"}.md`, md, "text/markdown");
+    });
+
+    /* ── Boot ── */
+    loadSettings();
+    renderQuick();
+    if (cfg.welcome) addMessage("assistant", cfg.welcome);
+    if (store.get(prefix + "ai-open")) setOpen(true);
+    refreshModels();
+
+    return { open: () => setOpen(true), close: () => setOpen(false), send, get settings() { return settings; } };
+  }
+
+  window.HFAAssist = { mount, renderMarkdown, CLAUDE_MODELS };
+})();
+
+</script>
+  <script>
+/*
+  Bowtie adapter for the HFA AI assistant (scripts/ai-assist.js).
+  The model sees a compact bowtie (hazard, top event, causes, consequences and barriers with the card ids they
+  protect) instead of the layout state, and answers with the same compact form: a complete bowtie or a patch.
+  Applying converts it back to the editor state: existing cards keep their rows and barriers their columns where
+  they still fit; new elements are added at the end, as the toolbar does.
+*/
+(function () {
+  "use strict";
+  const editor = window.BowtieEditor;
+  if (!editor || !window.HFAAssist) return;
+
+  const STATUSES = ["Implemented", "Partly Implemented", "Not Implemented", "To be implemented", "Unknown"];
+  const STRENGTHS = ["Normal", "Strong", "Weak"];
+
+  const SYSTEM_PROMPT = `You are an expert safety analyst applying the bowtie method (barrier-based risk analysis, as in CCPS/EI "Bow Ties in Risk Management") to the bowtie supplied as JSON.
+
+Method:
+1. Hazard and top event: the hazard is the source of harm in normal operation; the top event is the moment control over it is lost. Check that the top event is a loss of control, not a cause or a consequence.
+2. Threats (causes) on the left lead to the top event; consequences on the right follow from it. Check that each is specific, independent and credible, and point out missing ones.
+3. Barriers: preventive barriers (left) stop a cause from reaching the top event; recovery barriers (right, called reactive barriers in the editor) stop the top event from escalating into a consequence. A barrier must be effective, independent and auditable (detect – decide – act); an activity, a procedure that is only a hope, or a cause written as a barrier does not count. Assess each barrier's strength (Strong / Normal / Weak) and implementation status, and look for common-mode failure where one barrier element appears on several paths.
+4. Escalation factors that degrade barriers and their controls, and the human factors in barriers that rely on people (workload, training, alarm handling, communication).
+
+Rules:
+- Reference elements by their ids (C1, K2, P3, R1). Do not invent elements without labelling them "proposed".
+- Prefer Markdown tables: for barriers use Barrier | Protects | Type | Strength | Status | Assessment.
+- Be concise and specific; state uncertainty instead of guessing.
+- Answer in the language of the user's question; keep the diagram text in the language it is written in.`;
+
+  const SCHEMA_PROMPT = `
+
+Data model (compact form of the diagram):
+{ "hazard": {"id": "HZ", "label": "…"}, "topEvent": {"id": "TE", "label": "…"},
+  "causes":        [{"id": "C1", "description": "…"}],
+  "preventiveBarriers": [{"id": "P1", "description": "…", "protects": ["C1", "C2"], "strength": "Normal", "status": "Implemented"}],
+  "consequences":  [{"id": "K1", "description": "…"}],
+  "reactiveBarriers":   [{"id": "R1", "description": "…", "protects": ["K1"], "strength": "Strong", "status": "Unknown"}] }
+Causes and consequences are listed top to bottom. Preventive barriers are listed from the causes toward the top event; reactive (recovery) barriers from the top event toward the consequences. "protects" lists the cause ids (preventive) or consequence ids (reactive) whose path the barrier sits on.
+strength is one of ${STRENGTHS.join(", ")}; status is one of ${STATUSES.join(", ")}.
+
+Changing the diagram: unless the user explicitly asks for the complete bowtie, do NOT repeat unchanged elements. Return one \`\`\`json block that is a patch:
+{"patch": true, "topEvent": {"label": "…"},
+ "causes": [{"id": "C5", "description": "…"}],
+ "preventiveBarriers": [{"id": "P2", "status": "Partly Implemented"}, {"id": "P6", "description": "…", "protects": ["C5"], "strength": "Normal", "status": "To be implemented"}],
+ "remove": ["K3", "R2"]}
+Ids in "remove" (cards or barriers) are deleted first. Then an element whose id exists is merged (only the fields you give change) and a new id is added at the end of its list. Cause ids start with C, consequence ids with K, preventive barrier ids with P and reactive barrier ids with R; give new elements ids that are not used yet.
+For a complete bowtie give the compact form without "patch".`;
+
+  const QUICK_ACTIONS = [
+    ["Review bowtie", "Review the bowtie: is the top event a loss of control, are the hazard, causes and consequences specific and complete? Point out problems and propose a patch."],
+    ["Assess barriers", "Assess every barrier: is it a real barrier (effective, independent, auditable), is the strength and status plausible, and is it on the right paths? Use a table, then propose corrections as a patch."],
+    ["Missing barriers", "Find causes and consequences with too few or only weak barriers, and propose additional barriers as a patch (new ids, status \"To be implemented\")."],
+    ["Common-mode failure", "Look for common-mode failure: barriers or barrier elements that appear on several paths, or that depend on the same person, system or procedure. Explain the risk and how to reduce it."],
+    ["Escalation factors", "For the most important barriers, list escalation factors that could degrade them and the controls that would keep them effective."],
+    ["Human factors", "Which barriers rely on human action? For each, assess the human factors (workload, time, training, alarms, communication, procedures) and how the barrier could fail."],
+  ];
+
+  /* ── State ↔ compact form ── */
+  const tagToId = (idTagId) => String(idTagId).replace(/^id-/, "");
+  const byRow = (a, b) => a.row - b.row;
+  const barrierOut = (b) => ({ id: b.id, description: b.description, protects: b.protects.map(tagToId), strength: b.strength, status: b.status });
+  const byCol = (a, b) => a.col - b.col || (a.authoredSegments?.[0]?.row ?? 0) - (b.authoredSegments?.[0]?.row ?? 0);
+  function toCompact(s) {
+    return {
+      hazard: { id: s.hazard.id, label: s.hazard.label },
+      topEvent: { id: s.topEvent.id, label: s.topEvent.label },
+      causes: [...s.left.causes].sort(byRow).map((c) => ({ id: c.id, description: c.description })),
+      preventiveBarriers: [...s.left.barriers].sort(byCol).map(barrierOut),
+      consequences: [...s.right.consequences].sort(byRow).map((c) => ({ id: c.id, description: c.description })),
+      reactiveBarriers: [...s.right.barriers].sort(byCol).map(barrierOut),
+    };
+  }
+  const getContext = () => toCompact(editor.getState());
+
+  function getScope() {
+    const sel = editor.getSelection();
+    const c = getContext();
+    const all = { causes: c.causes, consequences: c.consequences, preventiveBarriers: c.preventiveBarriers, reactiveBarriers: c.reactiveBarriers };
+    const picked = {}, ids = [];
+    const pick = (k, item) => { (picked[k] ||= []).push(item); ids.push(item.id); };
+    const wanted = new Set(sel.ids.map((d) => d.replace(/^c-/, "")));
+    if (sel.barrierId) wanted.add(String(sel.barrierId).toUpperCase());
+    Object.entries(all).forEach(([k, list]) => list.forEach((item) => { if (wanted.has(item.id) || (sel.barrierId && item.id.toLowerCase() === sel.barrierId)) pick(k, item); }));
+    if (sel.ids.includes("hazard")) { picked.hazard = c.hazard; ids.push(c.hazard.id); }
+    if (sel.ids.includes("top-event")) { picked.topEvent = c.topEvent; ids.push(c.topEvent.id); }
+    return ids.length ? { label: ids.join(", "), items: picked } : null;
+  }
+
+  /* ── Compact form → editor state ── */
+  const fixStrength = (v, d = "Normal") => STRENGTHS.find((x) => x.toLowerCase() === String(v || "").toLowerCase()) || d;
+  const fixStatus = (v, d = "Unknown") => STATUSES.find((x) => x.toLowerCase() === String(v || "").toLowerCase()) || d;
+  const seqOf = (prefix, ids) => ids.reduce((m, id) => { const hit = new RegExp(`^${prefix}(\\d+)$`, "i").exec(id); return hit ? Math.max(m, +hit[1]) : m; }, 0);
+
+  /** Lay out one side: rows follow the card order; barriers keep a valid column of their own, others are packed in
+      list order (the next barrier shares the last column when its rows don't overlap, else opens a new one). */
+  function layoutSide(side, cards, barriers, isLeft, topEventId) {
+    cards.forEach((c, i) => {
+      c.row = i + 1; c.domId = `c-${c.id}`; c.idTagId = `id-${c.id}`; c.connectorTarget = `id-${topEventId}`;
+    });
+    const rowOf = new Map(cards.map((c) => [c.idTagId, c.row]));
+    const valid = new Set(rowOf.keys());
+    barriers.forEach((b) => {
+      b.protects = [...new Set(b.protects)].filter((t) => valid.has(t)).sort((x, y) => rowOf.get(x) - rowOf.get(y));
+      if (!b.protects.length) b.protects = cards.map((c) => c.idTagId); // unlinked: guard every path on this side
+      b.everLinked = true;
+      b.rows = new Set(b.protects.map((t) => rowOf.get(t)));
+    });
+    const first = isLeft ? 2 : 1;
+    const cols = []; // cols[i] = rows taken in column first + i
+    const fits = (i, rows) => ![...rows].some((r) => cols[i].has(r));
+    // Barriers that already have a column keep it if it is still free.
+    const placed = new Set();
+    barriers.filter((b) => Number.isInteger(b.keepCol)).sort((a, b) => a.keepCol - b.keepCol).forEach((b) => {
+      const i = b.keepCol - first;
+      if (i < 0) return;
+      while (cols.length <= i) cols.push(new Set());
+      if (fits(i, b.rows)) { b.rows.forEach((r) => cols[i].add(r)); b.col = b.keepCol; placed.add(b); }
+    });
+    barriers.forEach((b) => {
+      if (placed.has(b)) return;
+      let i = cols.length - 1;
+      if (i < 0 || !fits(i, b.rows)) { cols.push(new Set()); i = cols.length - 1; }
+      b.rows.forEach((r) => cols[i].add(r));
+      b.col = first + i;
+    });
+    // Drop empty columns.
+    const used = [...new Set(barriers.map((b) => b.col))].sort((a, b) => a - b);
+    barriers.forEach((b) => { b.col = first + used.indexOf(b.col); delete b.rows; delete b.keepCol; b.authoredSegments = [{ row: 1, rowSpan: 1 }]; });
+    side.rows = Math.max(cards.length, 1);
+    side.barrierCols = used.length;
+  }
+
+  function toState(c, base) {
+    const s = JSON.parse(JSON.stringify(base));
+    s.hazard = { id: c.hazard?.id || s.hazard.id, label: String(c.hazard?.label ?? s.hazard.label) };
+    s.topEvent = { id: c.topEvent?.id || s.topEvent.id, label: String(c.topEvent?.label ?? s.topEvent.label) };
+    const card = (x) => ({ id: String(x.id), description: String(x.description ?? "") });
+    const barrier = (x) => ({ barrierId: String(x.id).toLowerCase(), id: String(x.id), description: String(x.description ?? ""),
+      strength: fixStrength(x.strength), status: fixStatus(x.status), protects: (x.protects || []).map((id) => `id-${id}`),
+      keepCol: Number.isInteger(x.col) ? x.col : undefined });
+    s.left.causes = (c.causes || []).map(card);
+    s.right.consequences = (c.consequences || []).map(card);
+    s.left.barriers = (c.preventiveBarriers || []).map(barrier);
+    s.right.barriers = (c.reactiveBarriers || []).map(barrier);
+    layoutSide(s.left, s.left.causes, s.left.barriers, true, s.topEvent.id);
+    layoutSide(s.right, s.right.consequences, s.right.barriers, false, s.topEvent.id);
+    const seq = s.meta.seq || {};
+    s.meta.seq = {
+      cause: Math.max(seq.cause || 0, seqOf("C", s.left.causes.map((x) => x.id))),
+      consequence: Math.max(seq.consequence || 0, seqOf("K", s.right.consequences.map((x) => x.id))),
+      preventiveBarrier: Math.max(seq.preventiveBarrier || 0, seqOf("P", s.left.barriers.map((x) => x.id))),
+      reactiveBarrier: Math.max(seq.reactiveBarrier || 0, seqOf("R", s.right.barriers.map((x) => x.id))),
+    };
+    return s;
+  }
+
+  /** Merge a patch into the compact form of the current state. Existing barriers carry their column as "col". */
+  function applyPatch(state, patch) {
+    const c = toCompact(state);
+    const colOf = new Map([...state.left.barriers, ...state.right.barriers].map((b) => [b.id, b.col]));
+    ["preventiveBarriers", "reactiveBarriers"].forEach((k) => c[k].forEach((b) => { b.col = colOf.get(b.id); }));
+    const stats = { added: 0, changed: 0, removed: 0 };
+    const LISTS = ["causes", "consequences", "preventiveBarriers", "reactiveBarriers"];
+    const PREFIX = { causes: "C", consequences: "K", preventiveBarriers: "P", reactiveBarriers: "R" };
+    const allIds = () => new Set(LISTS.flatMap((k) => c[k].map((x) => x.id)));
+
+    const gone = new Set((Array.isArray(patch.remove) ? patch.remove : []).map(String));
+    LISTS.forEach((k) => {
+      const before = c[k].length;
+      c[k] = c[k].filter((x) => !gone.has(x.id));
+      stats.removed += before - c[k].length;
+    });
+    // A barrier whose every path was removed would sit on no path: it goes too.
+    stats.dropped = [];
+    ["preventiveBarriers", "reactiveBarriers"].forEach((k) => {
+      c[k] = c[k].filter((b) => {
+        const had = b.protects.length;
+        b.protects = b.protects.filter((id) => !gone.has(id));
+        if (had && !b.protects.length) { stats.dropped.push(b.id); stats.removed++; return false; }
+        return true;
+      });
+    });
+
+    ["hazard", "topEvent"].forEach((k) => {
+      if (patch[k] && typeof patch[k] === "object" && patch[k].label != null) { c[k].label = String(patch[k].label); stats.changed++; }
+    });
+    LISTS.forEach((k) => {
+      (Array.isArray(patch[k]) ? patch[k] : []).forEach((x) => {
+        if (!x || typeof x !== "object") return;
+        const hit = x.id != null ? c[k].find((y) => y.id === String(x.id)) : null;
+        const fields = { ...x }; delete fields.id; delete fields.col;
+        if (hit) {
+          if (fields.protects && hit.protects && (fields.protects.length !== hit.protects.length || fields.protects.some((p, i) => p !== hit.protects[i]))) delete hit.col;
+          Object.assign(hit, fields); stats.changed++; return;
+        }
+        const used = allIds();
+        let id = x.id != null ? String(x.id) : "";
+        if (!id || used.has(id) || !new RegExp(`^${PREFIX[k]}\\d+$`, "i").test(id)) {
+          let n = seqOf(PREFIX[k], [...used]) + 1; while (used.has(PREFIX[k] + n)) n++;
+          id = PREFIX[k] + n;
+        }
+        c[k].push({ ...fields, id: id.toUpperCase() });
+        stats.added++;
+      });
+    });
+    return { compact: c, stats };
+  }
+
+  function inspect(obj) {
+    if (obj.patch === true) {
+      const n = (k) => (Array.isArray(obj[k]) ? obj[k].length : 0);
+      const parts = [["causes", "causes"], ["preventiveBarriers", "preventive barriers"], ["consequences", "consequences"], ["reactiveBarriers", "reactive barriers"]]
+        .filter(([k]) => n(k)).map(([k, label]) => `${n(k)} ${label}`);
+      if (obj.hazard) parts.push("hazard");
+      if (obj.topEvent) parts.push("top event");
+      if (n("remove")) parts.push(`remove ${obj.remove.join(", ")}`);
+      return { title: `Bowtie patch · ${parts.join(", ") || "no changes"}`, applyLabel: "Apply to diagram" };
+    }
+    if (Array.isArray(obj.causes) || Array.isArray(obj.consequences)) {
+      const n = (k) => (Array.isArray(obj[k]) ? obj[k].length : 0);
+      return { title: `Bowtie · ${n("causes")} causes, ${n("preventiveBarriers") + n("reactiveBarriers")} barriers, ${n("consequences")} consequences`,
+        applyLabel: "Load into diagram", confirm: "Replace the diagram with this bowtie? (Revert restores the current one; Export first to keep a copy.)" };
+    }
+    return null;
+  }
+
+  function apply(obj) {
+    const cur = editor.getState();
+    if (obj.patch === true) {
+      const { compact, stats } = applyPatch(cur, obj);
+      editor.replaceState(toState(compact, cur));
+      const dropped = stats.dropped.length ? ` (${stats.dropped.join(", ")} only guarded removed paths and went too)` : "";
+      return `Patch applied: ${stats.added} added, ${stats.changed} changed, ${stats.removed} removed${dropped}.`;
+    }
+    editor.replaceState(toState(obj, cur));
+    return "Bowtie loaded.";
+  }
+
+  window.BowtieAssist = HFAAssist.mount({
+    id: "bowtie",
+    title: "Bowtie analysis",
+    toolbar: document.querySelector(".toolbar"),
+    buttonClass: "action-btn",
+    systemPrompt: SYSTEM_PROMPT,
+    schemaPrompt: SCHEMA_PROMPT,
+    contextLabel: "Current bowtie (JSON, compact form)",
+    getContext,
+    getScope,
+    quickActions: QUICK_ACTIONS,
+    inspect,
+    apply,
+    snapshot: () => editor.getState(),
+    restore: (snap) => editor.replaceState(snap),
+    welcome: "Pick a provider in **Settings**, then use a quick action or ask a question. The bowtie is sent with every request; select cards or a barrier to focus on them.",
+    exportName: "bowtie-analysis",
+  });
+  Object.assign(window.BowtieAssist, { applyPatch, toState, toCompact });
 })();
 
 </script>
