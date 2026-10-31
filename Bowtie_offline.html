@@ -3335,7 +3335,7 @@
   HFA AI assistant — a side panel that sends the tool's current analysis to an LLM and can apply its proposals.
 
   Ported from the HFA STPA Workbench (hfa-stpa/workbench/index.html, sections 4 and 6): the same provider adapters
-  (Anthropic Claude, Google Gemini, local Ollama / LM Studio / LocalAI), the same model picker, streaming, Markdown
+  (Anthropic Claude, Google Gemini, local Ollama / LM Studio / LocalAI; plus Hugging Face Inference Providers), the same model picker, streaming, Markdown
   rendering, foldable answers and Markdown export. The same file is used by hfa-hta and hfa-bowtie; keep the copies equal.
 
   The host tool mounts it with an adapter:
@@ -3390,7 +3390,12 @@
     local_endpoint: "http://localhost:11434/v1/chat/completions",
     local_model: "llama3.1",
     claude_max_tokens: 64000,
+    hf_model: "google/gemma-4-31B-it",
   };
+  /* Hugging Face Inference Providers: one OpenAI-compatible router in front of the providers that serve open models.
+     A model id may end in ":<provider>", ":cheapest" or ":fastest" to choose who serves it. */
+  const HF_ROUTER = "https://router.huggingface.co/v1";
+  const HF_MODELS = ["google/gemma-4-31B-it", "google/gemma-3-27b-it", "Qwen/Qwen3-32B", "meta-llama/Llama-3.3-70B-Instruct"];
 
   /* maxOut caps max_tokens; effort lists the accepted levels (null: don't send output_config); fallback marks the
      models that take server-side refusal fallback (fallbacks: "default"). */
@@ -3502,6 +3507,11 @@
         page = data.nextPageToken;
       }
     }
+    if (provider === "hf") {
+      if (!cfg.hf_key) throw new Error("no access token");
+      const data = await readJson(await fetch(HF_ROUTER + "/models", { headers: { authorization: "Bearer " + cfg.hf_key } }));
+      return (data.data || []).map((m) => ({ id: m.id, label: m.id })).sort((a, b) => a.id.localeCompare(b.id));
+    }
     if (provider === "local") {
       const headers = {}; if (cfg.local_key) headers.authorization = "Bearer " + cfg.local_key;
       const data = await readJson(await fetch(localModelsUrl(cfg.local_endpoint || DEFAULTS.local_endpoint), { headers }));
@@ -3566,6 +3576,21 @@
       return { text: text || JSON.stringify(data), raw: data };
     }
 
+    if (provider === "hf") {
+      if (!cfg.hf_key) throw new Error("Add a Hugging Face access token in Settings.");
+      const res = await fetch(HF_ROUTER + "/chat/completions", {
+        method: "POST", signal,
+        headers: { "content-type": "application/json", authorization: "Bearer " + cfg.hf_key },
+        body: JSON.stringify({ model: cfg.hf_model || DEFAULTS.hf_model, messages: [{ role: "system", content: systemPrompt }, ...messages] }),
+      });
+      if (res.status === 402) throw new Error("HTTP 402: the monthly Inference Providers credits of this Hugging Face account are used up (huggingface.co/settings/billing).");
+      const data = await readJson(res);
+      const choice = data.choices?.[0];
+      const text = choice?.message?.content ?? JSON.stringify(data);
+      if (choice?.finish_reason === "length") return { text: text + "\n\n_…output truncated by the provider. Narrow the scope or ask for a patch._", raw: data, usage: hfUsage(data) };
+      return { text, raw: data, usage: hfUsage(data) };
+    }
+
     if (provider === "local") {
       const endpoint = localChatUrl(cfg.local_endpoint || DEFAULTS.local_endpoint);
       const model = cfg.local_model || DEFAULTS.local_model;
@@ -3589,6 +3614,9 @@
 
     throw new Error("Unknown provider: " + provider);
   }
+
+  /** OpenAI-style usage → the { input_tokens, output_tokens } shape the log shows. */
+  const hfUsage = (data) => data.usage ? { input_tokens: data.usage.prompt_tokens, output_tokens: data.usage.completion_tokens } : undefined;
 
   /* ── Safe Markdown → DOM (all text is escaped first; no raw HTML from the model) ── */
   const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -3769,7 +3797,7 @@
     /* Settings dialog */
     const field = (label, input) => el("label", {}, label, input);
     const f = {
-      provider: el("select", {}, new Option("Anthropic Claude", "claude"), new Option("Google Gemini", "gemini"), new Option("Local (Ollama / LM Studio / LocalAI)", "local")),
+      provider: el("select", {}, new Option("Anthropic Claude", "claude"), new Option("Google Gemini", "gemini"), new Option("Hugging Face (Inference Providers)", "hf"), new Option("Local (Ollama / LM Studio / LocalAI)", "local")),
       claude_key: el("input", { type: "password", autocomplete: "off", placeholder: "sk-ant-…" }),
       claude_model: el("input", { type: "text" }),
       claude_max_tokens: el("input", { type: "number", min: 1024, max: 128000, step: 1024 }),
@@ -3780,13 +3808,16 @@
       local_endpoint: el("input", { type: "url", placeholder: DEFAULTS.local_endpoint }),
       local_model: el("input", { type: "text", placeholder: DEFAULTS.local_model }),
       local_key: el("input", { type: "password", autocomplete: "off", placeholder: "optional" }),
+      hf_key: el("input", { type: "password", autocomplete: "off", placeholder: "hf_…" }),
+      hf_model: el("input", { type: "text", placeholder: DEFAULTS.hf_model }),
       remember_keys: el("input", { type: "checkbox" }),
       system_prompt: el("textarea", { spellcheck: false }),
     };
     const dl = (id, input) => { const list = el("datalist", { id: `${prefix}${id}` }); input.setAttribute("list", list.id); return list; };
-    const claudeList = dl("claudeModels", f.claude_model), geminiList = dl("geminiModels", f.gemini_model), localList = dl("localModels", f.local_model);
+    const claudeList = dl("claudeModels", f.claude_model), geminiList = dl("geminiModels", f.gemini_model), localList = dl("localModels", f.local_model), hfList = dl("hfModels", f.hf_model);
     CLAUDE_MODELS.forEach((x) => claudeList.appendChild(new Option(x.label, x.id)));
     GEMINI_MODELS.forEach((x) => geminiList.appendChild(new Option(x, x)));
+    HF_MODELS.forEach((x) => hfList.appendChild(new Option(x, x)));
     $.modelsState = el("span", { className: "ai-pill" });
     $.refreshModels = btn("Refresh model list");
     $.forgetKeys = btn("Forget stored keys");
@@ -3804,6 +3835,8 @@
         el("p", { className: "hint", textContent: "Calls api.anthropic.com directly from the browser with anthropic-dangerous-direct-browser-access. Your key is visible to anyone using this browser profile — use a restricted key." })),
       fs("gemini", "Google Gemini", field("API key", f.gemini_key), field("Model", f.gemini_model), geminiList,
         el("p", { className: "hint", textContent: "Sent as the x-goog-api-key header (not in the URL)." })),
+      fs("hf", "Hugging Face", field("Access token", f.hf_key), field("Model", f.hf_model), hfList,
+        el("p", { className: "hint", textContent: "Calls router.huggingface.co (OpenAI-compatible). Create a fine-grained token with \"Make calls to Inference Providers\" at huggingface.co/settings/tokens. Usage is billed to the token's account; free accounts get a small monthly credit. Add \":cheapest\", \":fastest\" or \":<provider>\" to the model id to choose who serves it." })),
       fs("local", "Local model", field("Endpoint", f.local_endpoint), field("Model", f.local_model), localList, field("API key", f.local_key),
         el("p", { className: "hint", textContent: "OpenAI-compatible …/v1/chat/completions, or Ollama's /api/chat or /api/generate. For Ollama from file://, start it with OLLAMA_ORIGINS=*." })),
       el("fieldset", {}, el("legend", { textContent: "Keys" }),
@@ -3824,8 +3857,8 @@
 
     /* ── Settings ── */
     const PROVIDER_FIELDS = ["provider", "claude_key", "claude_model", "claude_max_tokens", "claude_effort", "claude_fallbacks",
-      "gemini_key", "gemini_model", "local_endpoint", "local_model", "local_key", "remember_keys"];
-    const SECRET_FIELDS = ["claude_key", "gemini_key", "local_key"];
+      "gemini_key", "gemini_model", "hf_key", "hf_model", "local_endpoint", "local_model", "local_key", "remember_keys"];
+    const SECRET_FIELDS = ["claude_key", "gemini_key", "hf_key", "local_key"];
 
     function loadSettings() {
       let shared = store.get(PROVIDER_KEY);
@@ -3834,7 +3867,7 @@
         shared = Object.fromEntries(PROVIDER_FIELDS.filter((k) => stpa[k] !== undefined).map((k) => [k, stpa[k]]));
       }
       settings = { provider: "claude", claude_model: DEFAULTS.claude_model, claude_max_tokens: DEFAULTS.claude_max_tokens, claude_effort: "medium",
-        claude_fallbacks: true, gemini_model: DEFAULTS.gemini_model, local_endpoint: DEFAULTS.local_endpoint, local_model: DEFAULTS.local_model,
+        claude_fallbacks: true, gemini_model: DEFAULTS.gemini_model, hf_model: DEFAULTS.hf_model, local_endpoint: DEFAULTS.local_endpoint, local_model: DEFAULTS.local_model,
         remember_keys: true, ...shared,
         system_prompt: store.get(prefix + "ai-prompt") || cfg.systemPrompt,
         keep_history: !!store.get(prefix + "ai-keep-history") };
@@ -3858,11 +3891,12 @@
     const providerLabel = () => ({
       claude: settings.claude_model || DEFAULTS.claude_model,
       gemini: settings.gemini_model || DEFAULTS.gemini_model,
+      hf: settings.hf_model || DEFAULTS.hf_model,
       local: settings.local_model || DEFAULTS.local_model,
     })[settings.provider];
 
     /* Models the active provider reported; null until fetched (or when the fetch failed). */
-    const fetchedModels = { claude: null, gemini: null, local: null };
+    const fetchedModels = { claude: null, gemini: null, hf: null, local: null };
     let modelsSeq = 0;
     async function refreshModels() {
       const p = settings.provider, seq = ++modelsSeq;
@@ -3904,22 +3938,23 @@
           pick.appendChild(og);
         });
       } else if (p === "gemini") GEMINI_MODELS.forEach((id) => pick.appendChild(new Option(id, id)));
-      if (![...pick.options].some((o) => o.value === cur)) pick.appendChild(new Option(p === "local" ? cur : `${cur} (custom)`, cur));
+      else if (p === "hf") HF_MODELS.forEach((id) => pick.appendChild(new Option(id, id)));
+      if (![...pick.options].some((o) => o.value === cur)) pick.appendChild(new Option(p === "local" || p === "hf" ? cur : `${cur} (custom)`, cur));
       pick.value = cur;
-      const list = { claude: claudeList, gemini: geminiList, local: localList }[p];
+      const list = { claude: claudeList, gemini: geminiList, hf: hfList, local: localList }[p];
       if (list && fetched) list.replaceChildren(...fetched.map((m) => new Option(m.label, m.id)));
     }
 
     $.modelPick.addEventListener("change", (e) => { f[settings.provider + "_model"].value = e.target.value; saveSettings(); });
     // Browsers only suggest datalist entries matching the field's text; empty the field while it has focus.
-    ["claude_model", "gemini_model", "local_model"].forEach((k) => {
+    ["claude_model", "gemini_model", "hf_model", "local_model"].forEach((k) => {
       const input = f[k];
       input.addEventListener("focus", () => { input.dataset.prev = input.value; input.dataset.ph = input.placeholder; input.placeholder = input.value || input.placeholder; input.value = ""; });
       input.addEventListener("blur", () => { if (!input.value.trim() && input.dataset.prev) { input.value = input.dataset.prev; saveSettings(); } input.placeholder = input.dataset.ph || ""; });
     });
     Object.values(f).forEach((input) => input.addEventListener("change", saveSettings));
     $.keep.addEventListener("change", saveSettings);
-    ["provider", "claude_key", "gemini_key", "local_endpoint", "local_key"].forEach((k) => f[k].addEventListener("change", () => {
+    ["provider", "claude_key", "gemini_key", "hf_key", "local_endpoint", "local_key"].forEach((k) => f[k].addEventListener("change", () => {
       if (k === "provider" || k.startsWith(settings.provider + "_")) refreshModels();
     }));
     $.refreshModels.addEventListener("click", refreshModels);
