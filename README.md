@@ -28,9 +28,24 @@ The editor also runs fully offline. [`Bowtie_offline.html`](https://larswpetters
   - `Q` - Add Consequence
   - `L` - Light mode
   - `D` - Dark mode
+  - `A` - AI analysis panel
 - **Inline Editing**: Click any node to edit text inline
 - **Barrier Mapping**: Select barriers and click causes/consequences to reassign coverage
 - **Responsive**: Works on desktop and mobile browsers
+
+## AI analysis
+
+Press **AI…** in the toolbar (or **A**) to open the analysis panel on the right. It works the same way as the AI analysis in the [STPA workbench](https://larswpettersson.github.io/hfa-stpa/workbench/):
+
+- **Providers:** Anthropic Claude, Google Gemini, Hugging Face Inference Providers (an `hf_…` token; default model `google/gemma-4-31B-it`), or a local model (Ollama, LM Studio, LocalAI). Pick one under **Settings…** and paste an API key or token (or check the local endpoint). Hugging Face setup and the Space that hosts the tools: [hfa-ds/docs/hugging-face.md](https://github.com/larswpettersson/hfa-ds/blob/main/docs/hugging-face.md). The picker beside **Send** chooses the model for the next question.
+- **Context:** every question sends the bowtie in a compact form: hazard, top event, causes, consequences, and each barrier with its strength, status and the cause or consequence ids it protects. Select cards (or a barrier) to focus the question on them.
+- **Quick actions** for common questions; **Send earlier turns** for follow-ups; answers fold, and **Export .md** saves the conversation.
+- **Proposals:** when the model returns a JSON block with a patch (or a complete analysis), the answer shows **Apply**. **Revert** on the card restores what was there before.
+- **Keys** stay in this browser's `localStorage` (only when *Remember API keys* is ticked) and are sent only to the provider you pick. The provider settings are shared by the HFA tools on the same site, so a key saved in the STPA workbench is used here too. Use a restricted key.
+
+The panel is [`scripts/ai-assist.js`](scripts/ai-assist.js) (the same file in hfa-hta and hfa-bowtie) and the bowtie adapter is [`scripts/bowtie-ai.js`](scripts/bowtie-ai.js): system prompt, quick actions, the data sent to the model and how a patch is applied. The offline file includes both; it needs network access only for the AI calls.
+
+A patch can change the hazard and top event and add, change or remove causes, consequences and barriers by id. Existing cards keep their order and barriers keep their column where it still fits; new barriers are placed in the next free column. A barrier whose every path is removed goes too.
 
 ## 🔗 Penpot MCP Integration
 
