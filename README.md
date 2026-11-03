@@ -35,9 +35,9 @@ The editor also runs fully offline. [`Bowtie_offline.html`](https://larswpetters
 
 ## AI analysis
 
-Press **AI** in the toolbar (or **A**) to open the analysis panel on the right. It works the same way as the AI analysis in the [STPA workbench](https://larswpettersson.github.io/hfa-stpa/workbench/):
+Press **AI…** in the toolbar (or **A**) to open the analysis panel on the right. It works the same way as the AI analysis in the [STPA workbench](https://larswpettersson.github.io/hfa-stpa/workbench/):
 
-- **Providers:** Anthropic Claude, Google Gemini, Hugging Face Inference Providers (an `hf_…` token; default model `google/gemma-4-31B-it`), or a local model (Ollama, LM Studio, LocalAI). Pick one under **Settings** and paste an API key or token (or check the local endpoint). Hugging Face setup and the Space that hosts the tools: [hfa-ds/docs/hugging-face.md](https://github.com/larswpettersson/hfa-ds/blob/main/docs/hugging-face.md). The picker beside **Send** chooses the model for the next question.
+- **Providers:** Anthropic Claude, Google Gemini, Hugging Face Inference Providers (an `hf_…` token; default model `google/gemma-4-31B-it`), or a local model (Ollama, LM Studio, LocalAI). Pick one under **Settings…** and paste an API key or token (or check the local endpoint). Hugging Face setup and the Space that hosts the tools: [hfa-ds/docs/hugging-face.md](https://github.com/larswpettersson/hfa-ds/blob/main/docs/hugging-face.md). The picker beside **Send** chooses the model for the next question.
 - **Context:** every question sends the bowtie in a compact form: hazard, top event, causes, consequences, and each barrier with its strength, status and the cause or consequence ids it protects. Select cards (or a barrier) to focus the question on them.
 - **Quick actions** for common questions; **Send earlier turns** for follow-ups; answers fold, and **Export .md** saves the conversation.
 - **Proposals:** when the model returns a JSON block with a patch (or a complete analysis), the answer shows **Apply**. **Revert** on the card restores what was there before.

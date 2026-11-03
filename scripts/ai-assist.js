@@ -13,7 +13,8 @@
       toolbar: element,                // the "AI" toggle button is appended here
       buttonClass: "action-btn",
       systemPrompt: "…",               // editable default system prompt
-      schemaPrompt: "…",               // appended after the (editable) system prompt: data model + patch format
+      schemaPrompt: "…" | () => "…",   // appended after the (editable) system prompt: data model + patch format;
+                                       // a function is called for every question (e.g. built from the analysis)
       contextLabel: "Current HTA (JSON)",
       getContext: () => object,        // the analysis sent with every question
       getScope: () => null | { label, items },   // the selection; items is sent as JSON with the question
@@ -428,7 +429,7 @@
     /* ── Markup ── */
     const $ = {};
     const btn = (label, props = {}) => el("button", { type: "button", textContent: label, ...props });
-    $.toggle = btn("AI", { className: `${cfg.buttonClass || ""} ai-toggle`, title: "AI analysis panel (A)", ariaLabel: "Open the AI analysis panel" });
+    $.toggle = btn("AI…", { className: `${cfg.buttonClass || ""} ai-toggle`, title: "AI analysis panel (A)", ariaLabel: "Open the AI analysis panel" });
     $.toggle.setAttribute("aria-expanded", "false");
     cfg.toolbar?.appendChild($.toggle);
 
@@ -437,7 +438,7 @@
     $.resize.setAttribute("role", "separator");
     $.resize.setAttribute("aria-orientation", "vertical");
     $.pill = el("span", { className: "ai-pill" });
-    $.settingsBtn = btn("Settings", { title: "Provider, API key, model and system prompt" });
+    $.settingsBtn = btn("Settings…", { title: "Provider, API key, model and system prompt" });
     $.close = btn("✕", { title: "Close the panel", ariaLabel: "Close the AI panel" });
     const head = el("div", { className: "ai-head" }, el("strong", { textContent: cfg.title }), $.pill, $.settingsBtn, $.close);
     $.quick = el("div", { className: "ai-quick" });
@@ -691,7 +692,8 @@
 
     function buildSystemPrompt() {
       const ctx = cfg.getContext();
-      return `${settings.system_prompt || cfg.systemPrompt}${cfg.schemaPrompt || ""}\n\n${cfg.contextLabel || "Current analysis (JSON)"}:\n${JSON.stringify(ctx, null, 2)}`;
+      const schema = typeof cfg.schemaPrompt === "function" ? cfg.schemaPrompt() : cfg.schemaPrompt || "";
+      return `${settings.system_prompt || cfg.systemPrompt}${schema}\n\n${cfg.contextLabel || "Current analysis (JSON)"}:\n${JSON.stringify(ctx, null, 2)}`;
     }
     function scopePreamble(s) {
       if (!s) return "";

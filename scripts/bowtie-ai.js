@@ -251,7 +251,7 @@ For a complete bowtie give the compact form without "patch".`;
     apply,
     snapshot: () => editor.getState(),
     restore: (snap) => editor.replaceState(snap),
-    welcome: "Pick a provider in **Settings**, then use a quick action or ask a question. The bowtie is sent with every request; select cards or a barrier to focus on them.",
+    welcome: "Pick a provider in **Settings…**, then use a quick action or ask a question. The bowtie is sent with every request; select cards or a barrier to focus on them.",
     exportName: "bowtie-analysis",
   });
   Object.assign(window.BowtieAssist, { applyPatch, toState, toCompact });
