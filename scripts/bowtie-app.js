@@ -564,7 +564,7 @@
   function formatImportValidationMessage(errors, warnings) {
     const lines = [];
     if (errors.length) {
-      lines.push(`Cannot load the file (${errors.length} error${errors.length === 1 ? "" : "s"}):`);
+      lines.push(`Cannot open the file (${errors.length} error${errors.length === 1 ? "" : "s"}):`);
       errors.forEach((item, index) => {
         lines.push(`${index + 1}. [${item.path}] ${item.message}`);
         if (item.fix) lines.push(`   Fix: ${item.fix}`);
@@ -756,14 +756,14 @@
         }
         if (warnings.length) {
           const proceed = window.confirm(
-            `${formatImportValidationMessage([], warnings)}\n\nLoad anyway?`
+            `${formatImportValidationMessage([], warnings)}\n\nOpen anyway?`
           );
           if (!proceed) return;
         }
         applyState(normalized);
       } catch (err) {
         console.error(err);
-        window.alert(`Could not load the file: ${err.message}`);
+        window.alert(`Could not open the file: ${err.message}`);
       }
     };
     reader.readAsText(file);
