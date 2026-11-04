@@ -500,6 +500,15 @@
       font-size: 13px;
     }
     .help-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+    /* Short messages, e.g. why a move was not carried out (as in HTA). */
+    .status-message {
+      position: fixed; bottom: 20px; right: 20px; z-index: 1000; max-width: min(480px, calc(100vw - 40px));
+      padding: 12px 20px; border-radius: 4px; font-size: 14px; white-space: pre-wrap; pointer-events: none;
+      background: var(--color-foreground); color: var(--color-background-elevated); opacity: 0; transition: opacity 0.3s;
+    }
+    .status-message.show { opacity: 1; }
+    .status-message.warning { background: #b38600; color: #0d1117; }
+    @media print { .status-message { display: none; } }
     .confirm-dialog { width: min(440px, calc(100vw - 32px)); font-size: 14px; }
     .confirm-dialog p { margin: 0 0 4px; color: var(--color-foreground); }
     .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
@@ -778,7 +787,7 @@
           <h3>Flera barriärer</h3>
           <dl>
             <dt>Shift+klick</dt><dd>Markera eller avmarkera en barriär (som i STPA)</dd>
-            <dt>← →</dt><dd>Flytta de markerade barriärerna en kolumn tillsammans</dd>
+            <dt>← →</dt><dd>Flytta de markerade barriärerna en kolumn tillsammans (bara på samma sida om topphändelsen; annars en varning)</dd>
             <dt>Esc</dt><dd>Avmarkera</dd>
           </dl>
           <p class="help-note">Barriärer i samma kolumn överlappar aldrig: en barriär som skulle krocka får en egen kolumn direkt efter.</p>
@@ -788,6 +797,7 @@
       </div>
     </div>
   </div>
+  <div class="status-message" id="statusMessage" role="status" aria-live="polite"></div>
   <script>
 (function () {
   const bowtie = document.getElementById("bowtie");
@@ -2869,11 +2879,28 @@
     });
   }
 
+  let statusTimer = null;
+  /** A short message at the bottom right; a warning stays a little longer. */
+  function showStatus(message, type = "info") {
+    const el = document.getElementById("statusMessage");
+    if (!el) return;
+    el.textContent = message;
+    el.className = `status-message show ${type}`;
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { el.className = "status-message"; }, type === "warning" ? 6000 : 2500);
+  }
+
   /** Move barriers one column left (-1) or right (+1), together. On each side the moved barriers keep their
       order and their target column; the barriers there that they would overlap take their place. Nothing moves
       if one of them is already at the edge. */
   function moveBarriers(barrierIds, direction) {
     const ids = [...new Set(barrierIds)];
+    // Barriers belong together only on one side of the top event (design principles 5.4): warn, don't move.
+    const sides = new Set(ids.map((id) => barrierSide(id)).filter(Boolean));
+    if (sides.size > 1) {
+      showStatus("Preventive and recovery barriers cannot be moved together. Shift+click to keep only the barriers on one side of the top event.", "warning");
+      return false;
+    }
     commit((s) => {
       ["left", "right"].forEach((side) => {
         const zone = side === "left" ? s.left : s.right;

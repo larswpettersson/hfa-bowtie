@@ -2078,11 +2078,28 @@
     });
   }
 
+  let statusTimer = null;
+  /** A short message at the bottom right; a warning stays a little longer. */
+  function showStatus(message, type = "info") {
+    const el = document.getElementById("statusMessage");
+    if (!el) return;
+    el.textContent = message;
+    el.className = `status-message show ${type}`;
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { el.className = "status-message"; }, type === "warning" ? 6000 : 2500);
+  }
+
   /** Move barriers one column left (-1) or right (+1), together. On each side the moved barriers keep their
       order and their target column; the barriers there that they would overlap take their place. Nothing moves
       if one of them is already at the edge. */
   function moveBarriers(barrierIds, direction) {
     const ids = [...new Set(barrierIds)];
+    // Barriers belong together only on one side of the top event (design principles 5.4): warn, don't move.
+    const sides = new Set(ids.map((id) => barrierSide(id)).filter(Boolean));
+    if (sides.size > 1) {
+      showStatus("Preventive and recovery barriers cannot be moved together. Shift+click to keep only the barriers on one side of the top event.", "warning");
+      return false;
+    }
     commit((s) => {
       ["left", "right"].forEach((side) => {
         const zone = side === "left" ? s.left : s.right;
