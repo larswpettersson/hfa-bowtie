@@ -847,7 +847,9 @@
       const t = $.prompt.value; $.prompt.value = ""; send(t);
     });
     $.prompt.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $.chat.requestSubmit(); });
-    $.clear.addEventListener("click", () => { if (busy) busy.abort(); history = []; transcript.length = 0; $.log.replaceChildren(); setStatus(""); updateToBottom(); });
+    /** Clears the conversation; the tools also call it on New, since earlier turns concern the old analysis. */
+    function clearConversation() { if (busy) busy.abort(); history = []; transcript.length = 0; $.log.replaceChildren(); setStatus(""); updateToBottom(); }
+    $.clear.addEventListener("click", clearConversation);
     $.saveLog.addEventListener("click", () => {
       const md = [`# ${cfg.title}`, "", `_Exported ${new Date().toISOString()} · ${providerLabel()}_`, "",
         "## Analysis", "", "```json", JSON.stringify(cfg.getContext(), null, 2), "```", "",
@@ -862,7 +864,7 @@
     if (store.get(prefix + "ai-open")) setOpen(true);
     refreshModels();
 
-    return { open: () => setOpen(true), close: () => setOpen(false), send, get settings() { return settings; } };
+    return { open: () => setOpen(true), close: () => setOpen(false), send, clear: clearConversation, get settings() { return settings; } };
   }
 
   window.HFAAssist = { mount, renderMarkdown, CLAUDE_MODELS };

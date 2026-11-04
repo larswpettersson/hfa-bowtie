@@ -499,6 +499,9 @@
       font-size: 13px;
     }
     .help-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+    .confirm-dialog { width: min(440px, calc(100vw - 32px)); font-size: 14px; }
+    .confirm-dialog p { margin: 0 0 4px; color: var(--color-foreground); }
+    .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
     .help-dialog h2 { margin: 0 0 12px; font-size: 16px; }
     .help-dialog h3 { margin: 14px 0 4px; font-size: 13px; }
     .help-dialog dl {
@@ -592,6 +595,9 @@
           </button>
           <button type="button" class="action-btn" data-action="setTheme" data-theme-value="dark" data-shortcut="d" title="Dark mode (D)">
             <span class="ul">D</span><span>ark</span>
+          </button>
+          <button type="button" class="action-btn" data-action="newDiagram" title="Replace the diagram with a small example that shows the whole structure">
+            New
           </button>
           <button type="button" class="action-btn" data-action="importState" title="Open a diagram (JSON file)">
             Open…
@@ -1517,6 +1523,117 @@
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+    markSaved();
+  }
+
+  // ---------- Unsaved changes and New (hfa-ds design principles 4.3, 4.4) ----------
+
+  let savedFingerprint = null;
+  const fingerprint = () => {
+    const s = serializeState();
+    delete s.meta.theme; // the theme is not part of the analysis
+    return JSON.stringify(s);
+  };
+  /** The diagram as it was when it was last opened, saved or created counts as saved. */
+  function markSaved() {
+    savedFingerprint = fingerprint();
+  }
+  function hasUnsavedChanges() {
+    return !!state && fingerprint() !== savedFingerprint;
+  }
+
+  /** A small modal with the given buttons; resolves to the value of the button pressed ("" on Esc). */
+  function choose({ title, message, buttons }) {
+    return new Promise((resolve) => {
+      const dlg = document.createElement("dialog");
+      dlg.className = "help-dialog confirm-dialog";
+      const h = document.createElement("h2");
+      h.textContent = title;
+      const p = document.createElement("p");
+      p.textContent = message;
+      const row = document.createElement("div");
+      row.className = "confirm-actions";
+      buttons.forEach(([value, label]) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "action-btn";
+        b.value = value;
+        b.textContent = label;
+        b.addEventListener("click", () => dlg.close(value));
+        row.appendChild(b);
+      });
+      dlg.append(h, p, row);
+      dlg.addEventListener("keydown", (e) => e.stopPropagation());
+      dlg.addEventListener("click", (e) => e.stopPropagation());
+      dlg.addEventListener("close", () => {
+        resolve(dlg.returnValue || "");
+        dlg.remove();
+      });
+      document.body.appendChild(dlg);
+      dlg.showModal();
+      row.lastElementChild?.focus();
+    });
+  }
+
+  /** Unsaved changes: Save (then go on), Don't save (go on) or Cancel. Resolves true to go on. */
+  async function askAboutUnsaved(what) {
+    const answer = await choose({
+      title: "Unsaved changes",
+      message: `The diagram has changes that are not saved. ${what}`,
+      buttons: [["cancel", "Cancel"], ["discard", "Don't save"], ["save", "Save"]],
+    });
+    if (answer === "save") exportStateToFile();
+    return answer === "save" || answer === "discard";
+  }
+
+  /** Open… asks first when there are unsaved changes (design principles 4.4). */
+  async function openFile() {
+    if (hasUnsavedChanges() && !(await askAboutUnsaved("Opening a file replaces the diagram."))) return;
+    document.getElementById("import-state-file")?.click();
+  }
+
+  /** A minimal, generic bowtie that uses the whole structure: hazard, top event, two causes, two consequences,
+      a preventive barrier on both paths and a recovery barrier, with strength and status. */
+  function exampleDiagram() {
+    const card = (id, description, row) => ({ id, domId: `c-${id}`, idTagId: `id-${id}`, description, row, connectorTarget: "id-TE" });
+    const barrier = (id, description, col, protects, strength, status, rows) => ({
+      barrierId: id.toLowerCase(), id, description, col, strength, status, protects, everLinked: true,
+      authoredSegments: [{ row: rows[0], rowSpan: rows[1] }],
+    });
+    return {
+      version: DIAGRAM_VERSION,
+      meta: { theme: state?.meta?.theme || "light", seq: { cause: 2, preventiveBarrier: 1, reactiveBarrier: 1, consequence: 2 } },
+      hazard: { id: "HZ", label: "Hazard" },
+      topEvent: { id: "TE", label: "Top event: control over the hazard is lost" },
+      left: {
+        rows: 2, barrierCols: 1,
+        causes: [card("C1", "Cause 1", 1), card("C2", "Cause 2", 2)],
+        barriers: [barrier("P1", "Preventive barrier on both causes", 2, ["id-C1", "id-C2"], "Strong", "Implemented", [1, 2])],
+      },
+      right: {
+        rows: 2, barrierCols: 1,
+        consequences: [card("K1", "Consequence 1", 1), card("K2", "Consequence 2", 2)],
+        barriers: [barrier("R1", "Recovery barrier", 1, ["id-K1"], "Normal", "Partly Implemented", [1, 1])],
+      },
+    };
+  }
+
+  /** New: replaces the diagram with the example after asking, and clears the AI conversation. Bowtie has no undo,
+      so the question says so. */
+  async function newDiagram() {
+    if (hasUnsavedChanges()) {
+      if (!(await askAboutUnsaved("New replaces the diagram with a small example; this cannot be undone."))) return;
+    } else {
+      const answer = await choose({
+        title: "New diagram",
+        message: "Replace the diagram with a small example that shows the whole structure?",
+        buttons: [["cancel", "Cancel"], ["new", "New"]],
+      });
+      if (answer !== "new") return;
+    }
+    applyState(deserializeState(exampleDiagram()));
+    markSaved();
+    window.BowtieAssist?.clear?.();
   }
 
   function importStateFromFile(file) {
@@ -1537,6 +1654,7 @@
           if (!proceed) return;
         }
         applyState(normalized);
+        markSaved();
       } catch (err) {
         console.error(err);
         window.alert(`Could not open the file: ${err.message}`);
@@ -2871,7 +2989,8 @@
     addConsequence,
     setTheme: (btn) => setTheme(btn.dataset.themeValue),
     exportState: exportStateToFile,
-    importState: () => document.getElementById("import-state-file")?.click(),
+    importState: () => openFile(),
+    newDiagram: () => newDiagram(),
     toggleHelp: () => {
       const dlg = document.getElementById("help-dialog");
       if (!dlg) return;
@@ -3263,6 +3382,7 @@
   state = hydrateFromDom();
   render(state);
   buildConnectors();
+  markSaved();
 
   /** Replace the diagram (used by the AI panel); keeps the current theme, throws on validation errors. */
   function replaceState(raw) {
@@ -3278,6 +3398,7 @@
     replaceState,
     // Selected cards / hazard / top event (dom ids) and the barrier in link mode.
     getSelection: () => ({ ids: [...ui.selectedIds], barrierId: ui.activeBarrierId }),
+    hasUnsavedChanges,
   };
 
   const importStateInput = document.getElementById("import-state-file");
@@ -4180,7 +4301,9 @@
       const t = $.prompt.value; $.prompt.value = ""; send(t);
     });
     $.prompt.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $.chat.requestSubmit(); });
-    $.clear.addEventListener("click", () => { if (busy) busy.abort(); history = []; transcript.length = 0; $.log.replaceChildren(); setStatus(""); updateToBottom(); });
+    /** Clears the conversation; the tools also call it on New, since earlier turns concern the old analysis. */
+    function clearConversation() { if (busy) busy.abort(); history = []; transcript.length = 0; $.log.replaceChildren(); setStatus(""); updateToBottom(); }
+    $.clear.addEventListener("click", clearConversation);
     $.saveLog.addEventListener("click", () => {
       const md = [`# ${cfg.title}`, "", `_Exported ${new Date().toISOString()} · ${providerLabel()}_`, "",
         "## Analysis", "", "```json", JSON.stringify(cfg.getContext(), null, 2), "```", "",
@@ -4195,7 +4318,7 @@
     if (store.get(prefix + "ai-open")) setOpen(true);
     refreshModels();
 
-    return { open: () => setOpen(true), close: () => setOpen(false), send, get settings() { return settings; } };
+    return { open: () => setOpen(true), close: () => setOpen(false), send, clear: clearConversation, get settings() { return settings; } };
   }
 
   window.HFAAssist = { mount, renderMarkdown, CLAUDE_MODELS };
