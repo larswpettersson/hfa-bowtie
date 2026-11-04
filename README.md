@@ -6,7 +6,7 @@ A standalone HTML5 bowtie diagram editor for safety analysis, designed from Penp
 
 ## Offline use
 
-The editor also runs fully offline. [`Bowtie_offline.html`](https://larswpettersson.github.io/hfa-bowtie/Bowtie_offline.html) is a single self-contained HTML file (script inlined, no network needed). **[Download Bowtie_offline.html](https://larswpettersson.github.io/hfa-bowtie/Bowtie_offline.html)** (right-click → *Save link as…*), then open the saved file in any modern browser. **Load…** and **Save…** use local file pickers and downloads; preferences are kept in `localStorage`.
+The editor also runs fully offline. [`Bowtie_offline.html`](https://larswpettersson.github.io/hfa-bowtie/Bowtie_offline.html) is a single self-contained HTML file (script inlined, no network needed). **[Download Bowtie_offline.html](https://larswpettersson.github.io/hfa-bowtie/Bowtie_offline.html)** (right-click → *Save link as…*), then open the saved file in any modern browser. **New** replaces the diagram with a small, generic example (it asks first). **Open…** asks first if there are unsaved changes (Save, Don't save, Cancel). **Open…** and **Save** use a local file picker and a download; preferences are kept in `localStorage`.
 
 
 ## 📁 Files
@@ -31,6 +31,8 @@ The editor also runs fully offline. [`Bowtie_offline.html`](https://larswpetters
   - `A` - AI analysis panel
 - **Inline Editing**: Click any node to edit text inline
 - **Barrier Mapping**: Select barriers and click causes/consequences to reassign coverage
+- **Several barriers**: Shift+click barriers to select several (as in the STPA workbench) and move them together with ← / →; Esc clears the selection
+- **No overlaps**: barriers in one column never cover the same row. A barrier that would collide (after a move, a new link or a moved card) gets a column of its own right after; empty columns are dropped
 - **Responsive**: Works on desktop and mobile browsers
 
 ## AI analysis

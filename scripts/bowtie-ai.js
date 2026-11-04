@@ -79,8 +79,9 @@ For a complete bowtie give the compact form without "patch".`;
     const picked = {}, ids = [];
     const pick = (k, item) => { (picked[k] ||= []).push(item); ids.push(item.id); };
     const wanted = new Set(sel.ids.map((d) => d.replace(/^c-/, "")));
-    if (sel.barrierId) wanted.add(String(sel.barrierId).toUpperCase());
-    Object.entries(all).forEach(([k, list]) => list.forEach((item) => { if (wanted.has(item.id) || (sel.barrierId && item.id.toLowerCase() === sel.barrierId)) pick(k, item); }));
+    // The barrier in link mode and the barriers selected with Shift+click (barrier ids are the lower-case ids).
+    [sel.barrierId, ...(sel.barrierIds || [])].filter(Boolean).forEach((id) => wanted.add(String(id).toUpperCase()));
+    Object.entries(all).forEach(([k, list]) => list.forEach((item) => { if (wanted.has(item.id)) pick(k, item); }));
     if (sel.ids.includes("hazard")) { picked.hazard = c.hazard; ids.push(c.hazard.id); }
     if (sel.ids.includes("top-event")) { picked.topEvent = c.topEvent; ids.push(c.topEvent.id); }
     return ids.length ? { label: ids.join(", "), items: picked } : null;

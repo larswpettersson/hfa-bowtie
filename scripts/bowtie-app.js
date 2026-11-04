@@ -12,7 +12,8 @@
   let ignoreClickAfterPan = false;
 
   let state = null;
-  const ui = { activeBarrierId: null, selectedIds: new Set(), selectionAnchorId: null };
+  // selectedBarrierIds: barriers selected with Shift+click (as in the STPA workbench), moved together with ←/→.
+  const ui = { activeBarrierId: null, selectedIds: new Set(), selectionAnchorId: null, selectedBarrierIds: new Set() };
   let selectedFocusDomId = null;
   let editSession = null;
   let blurNavigation = null; // 'tab' | 'apply' | 'cancel'
@@ -564,7 +565,7 @@
   function formatImportValidationMessage(errors, warnings) {
     const lines = [];
     if (errors.length) {
-      lines.push(`Cannot load the file (${errors.length} error${errors.length === 1 ? "" : "s"}):`);
+      lines.push(`Cannot open the file (${errors.length} error${errors.length === 1 ? "" : "s"}):`);
       errors.forEach((item, index) => {
         lines.push(`${index + 1}. [${item.path}] ${item.message}`);
         if (item.fix) lines.push(`   Fix: ${item.fix}`);
@@ -719,6 +720,8 @@
     clearComponentSelection();
 
     state = nextState;
+    layoutBarriers(state, "left");
+    layoutBarriers(state, "right");
     validateState(state);
     render(state);
     buildConnectors();
@@ -741,6 +744,117 @@
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+    markSaved();
+  }
+
+  // ---------- Unsaved changes and New (hfa-ds design principles 4.3, 4.4) ----------
+
+  let savedFingerprint = null;
+  const fingerprint = () => {
+    const s = serializeState();
+    delete s.meta.theme; // the theme is not part of the analysis
+    return JSON.stringify(s);
+  };
+  /** The diagram as it was when it was last opened, saved or created counts as saved. */
+  function markSaved() {
+    savedFingerprint = fingerprint();
+  }
+  function hasUnsavedChanges() {
+    return !!state && fingerprint() !== savedFingerprint;
+  }
+
+  /** A small modal with the given buttons; resolves to the value of the button pressed ("" on Esc). */
+  function choose({ title, message, buttons }) {
+    return new Promise((resolve) => {
+      const dlg = document.createElement("dialog");
+      dlg.className = "help-dialog confirm-dialog";
+      const h = document.createElement("h2");
+      h.textContent = title;
+      const p = document.createElement("p");
+      p.textContent = message;
+      const row = document.createElement("div");
+      row.className = "confirm-actions";
+      buttons.forEach(([value, label]) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "action-btn";
+        b.value = value;
+        b.textContent = label;
+        b.addEventListener("click", () => dlg.close(value));
+        row.appendChild(b);
+      });
+      dlg.append(h, p, row);
+      dlg.addEventListener("keydown", (e) => e.stopPropagation());
+      dlg.addEventListener("click", (e) => e.stopPropagation());
+      dlg.addEventListener("close", () => {
+        resolve(dlg.returnValue || "");
+        dlg.remove();
+      });
+      document.body.appendChild(dlg);
+      dlg.showModal();
+      row.lastElementChild?.focus();
+    });
+  }
+
+  /** Unsaved changes: Save (then go on), Don't save (go on) or Cancel. Resolves true to go on. */
+  async function askAboutUnsaved(what) {
+    const answer = await choose({
+      title: "Unsaved changes",
+      message: `The diagram has changes that are not saved. ${what}`,
+      buttons: [["cancel", "Cancel"], ["discard", "Don't save"], ["save", "Save"]],
+    });
+    if (answer === "save") exportStateToFile();
+    return answer === "save" || answer === "discard";
+  }
+
+  /** Open… asks first when there are unsaved changes (design principles 4.4). */
+  async function openFile() {
+    if (hasUnsavedChanges() && !(await askAboutUnsaved("Opening a file replaces the diagram."))) return;
+    document.getElementById("import-state-file")?.click();
+  }
+
+  /** A minimal, generic bowtie that uses the whole structure: hazard, top event, two causes, two consequences,
+      a preventive barrier on both paths and a recovery barrier, with strength and status. */
+  function exampleDiagram() {
+    const card = (id, description, row) => ({ id, domId: `c-${id}`, idTagId: `id-${id}`, description, row, connectorTarget: "id-TE" });
+    const barrier = (id, description, col, protects, strength, status, rows) => ({
+      barrierId: id.toLowerCase(), id, description, col, strength, status, protects, everLinked: true,
+      authoredSegments: [{ row: rows[0], rowSpan: rows[1] }],
+    });
+    return {
+      version: DIAGRAM_VERSION,
+      meta: { theme: state?.meta?.theme || "light", seq: { cause: 2, preventiveBarrier: 1, reactiveBarrier: 1, consequence: 2 } },
+      hazard: { id: "HZ", label: "Hazard" },
+      topEvent: { id: "TE", label: "Top event: control over the hazard is lost" },
+      left: {
+        rows: 2, barrierCols: 1,
+        causes: [card("C1", "Cause 1", 1), card("C2", "Cause 2", 2)],
+        barriers: [barrier("P1", "Preventive barrier on both causes", 2, ["id-C1", "id-C2"], "Strong", "Implemented", [1, 2])],
+      },
+      right: {
+        rows: 2, barrierCols: 1,
+        consequences: [card("K1", "Consequence 1", 1), card("K2", "Consequence 2", 2)],
+        barriers: [barrier("R1", "Recovery barrier", 1, ["id-K1"], "Normal", "Partly Implemented", [1, 1])],
+      },
+    };
+  }
+
+  /** New: replaces the diagram with the example after asking, and clears the AI conversation. Bowtie has no undo,
+      so the question says so. */
+  async function newDiagram() {
+    if (hasUnsavedChanges()) {
+      if (!(await askAboutUnsaved("New replaces the diagram with a small example; this cannot be undone."))) return;
+    } else {
+      const answer = await choose({
+        title: "New diagram",
+        message: "Replace the diagram with a small example that shows the whole structure?",
+        buttons: [["cancel", "Cancel"], ["new", "New"]],
+      });
+      if (answer !== "new") return;
+    }
+    applyState(deserializeState(exampleDiagram()));
+    markSaved();
+    window.BowtieAssist?.clear?.();
   }
 
   function importStateFromFile(file) {
@@ -756,14 +870,15 @@
         }
         if (warnings.length) {
           const proceed = window.confirm(
-            `${formatImportValidationMessage([], warnings)}\n\nLoad anyway?`
+            `${formatImportValidationMessage([], warnings)}\n\nOpen anyway?`
           );
           if (!proceed) return;
         }
         applyState(normalized);
+        markSaved();
       } catch (err) {
         console.error(err);
-        window.alert(`Could not load the file: ${err.message}`);
+        window.alert(`Could not open the file: ${err.message}`);
       }
     };
     reader.readAsText(file);
@@ -1400,6 +1515,10 @@
     document.querySelectorAll(".card.is-selected, .hazard.is-selected, .top-event.is-selected").forEach((el) => {
       el.classList.remove("is-selected");
     });
+    document.querySelectorAll(".barrier.is-multi-selected").forEach((el) => el.classList.remove("is-multi-selected"));
+    ui.selectedBarrierIds.forEach((id) => {
+      getBarrierSegmentEls(id).forEach((seg) => seg.classList.add("is-multi-selected"));
+    });
     ui.selectedIds.forEach((domId) => {
       if (domId === "hazard") {
         document.querySelector(".hazard")?.classList.add("is-selected");
@@ -1488,11 +1607,58 @@
     updateTabOrder();
   }
 
-  function commit(mutator) {
+  /** Apply a change, then lay the barriers out so none overlap (see layoutBarriers). `hint` says which barriers
+      keep their column when two collide (prefer) and which give way (defer). */
+  function commit(mutator, hint = {}) {
     mutator(state);
+    layoutBarriers(state, "left", hint);
+    layoutBarriers(state, "right", hint);
     validateState(state);
     render(state);
     buildConnectors();
+  }
+
+  /** Rows a barrier covers: from what it protects once linked, else from its authored segments. */
+  function barrierRows(barrier, leaves) {
+    const segs = barrier.everLinked ? computeBarrierSegments(barrier, leaves) : barrier.authoredSegments || [];
+    const rows = new Set();
+    segs.forEach((seg) => {
+      for (let r = seg.row; r < seg.row + seg.rowSpan; r++) rows.add(r);
+    });
+    return rows;
+  }
+
+  /**
+   * No two barriers in one column may cover the same row. Columns keep their order (it is the order along the
+   * path to and from the top event); barriers that would overlap in a column get columns of their own right after
+   * it, and empty columns are dropped. Within a column, `prefer`red barriers keep it first and `defer`red ones give
+   * way first; otherwise the earlier barrier in the list keeps it.
+   */
+  function layoutBarriers(s, side, { prefer = [], defer = [] } = {}) {
+    const zone = side === "left" ? s.left : s.right;
+    const leaves = side === "left" ? s.left.causes : s.right.consequences;
+    const barriers = zone.barriers || [];
+    const first = side === "left" ? 2 : 1;
+    const rank = (b) => (prefer.includes(b.barrierId) ? 0 : defer.includes(b.barrierId) ? 2 : 1);
+    const order = new Map(barriers.map((b, i) => [b.barrierId, i]));
+    // Group by the columns as they are now, before any barrier is given a new one.
+    const groups = new Map();
+    barriers.forEach((b) => groups.set(b.col, [...(groups.get(b.col) || []), b]));
+    let next = first;
+    [...groups.keys()].sort((a, b) => a - b).forEach((c) => {
+      const group = groups.get(c)
+        .sort((a, b) => rank(a) - rank(b) || order.get(a.barrierId) - order.get(b.barrierId));
+      const taken = []; // taken[i]: rows used in output column next + i
+      group.forEach((b) => {
+        const rows = barrierRows(b, leaves);
+        let i = taken.findIndex((t) => ![...rows].some((r) => t.has(r)));
+        if (i < 0) { taken.push(new Set()); i = taken.length - 1; }
+        rows.forEach((r) => taken[i].add(r));
+        b.col = next + i;
+      });
+      next += taken.length;
+    });
+    zone.barrierCols = next - first;
   }
 
   // ---------- Connectors ----------
@@ -1707,6 +1873,8 @@
       else document.getElementById(domId)?.classList.remove("is-selected");
     });
     ui.selectedIds.clear();
+    ui.selectedBarrierIds.clear();
+    document.querySelectorAll(".barrier.is-multi-selected").forEach((el) => el.classList.remove("is-multi-selected"));
     ui.selectionAnchorId = null;
     selectedFocusDomId = null;
     selectionLayoutSnapshot = null;
@@ -1870,7 +2038,8 @@
       barrier.authoredSegments = computeBarrierSegments(barrier, leaves);
     }
     clearLinkModeUI(prevBarrierId);
-    commit(() => {});
+    // A barrier whose protected paths changed gives way if it now overlaps another barrier in its column.
+    commit(() => {}, { defer: [prevBarrierId] });
   }
 
   function exitLinkMode() {
@@ -1909,22 +2078,71 @@
     });
   }
 
-  function moveBarrierColumn(barrierId, direction) {
+  let statusTimer = null;
+  /** A short message at the bottom right; a warning stays a little longer. */
+  function showStatus(message, type = "info") {
+    const el = document.getElementById("statusMessage");
+    if (!el) return;
+    el.textContent = message;
+    el.className = `status-message show ${type}`;
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { el.className = "status-message"; }, type === "warning" ? 6000 : 2500);
+  }
+
+  /** Move barriers one column left (-1) or right (+1), together. On each side the moved barriers keep their
+      order and their target column; the barriers there that they would overlap take their place. Nothing moves
+      if one of them is already at the edge. */
+  function moveBarriers(barrierIds, direction) {
+    const ids = [...new Set(barrierIds)];
+    // Barriers belong together only on one side of the top event (design principles 5.4): warn, don't move.
+    const sides = new Set(ids.map((id) => barrierSide(id)).filter(Boolean));
+    if (sides.size > 1) {
+      showStatus("Preventive and recovery barriers cannot be moved together. Shift+click to keep only the barriers on one side of the top event.", "warning");
+      return false;
+    }
     commit((s) => {
-      const side = barrierSide(barrierId);
-      const barriers = side === "left" ? s.left.barriers : s.right.barriers;
-      const barrier = barriers.find((b) => b.barrierId === barrierId);
-      if (!barrier) return;
+      ["left", "right"].forEach((side) => {
+        const zone = side === "left" ? s.left : s.right;
+        const leaves = side === "left" ? s.left.causes : s.right.consequences;
+        const moving = zone.barriers.filter((b) => ids.includes(b.barrierId));
+        if (!moving.length) return;
+        const minCol = side === "left" ? 2 : 1;
+        const maxCol = side === "left" ? 1 + zone.barrierCols : zone.barrierCols;
+        if (moving.some((b) => b.col + direction < minCol || b.col + direction > maxCol)) return;
+        // Furthest in the direction of travel first, so a block of barriers moves as a block.
+        moving.sort((a, b) => (b.col - a.col) * direction);
+        moving.forEach((b) => {
+          const from = b.col;
+          const to = from + direction;
+          const rows = barrierRows(b, leaves);
+          zone.barriers
+            .filter((o) => !ids.includes(o.barrierId) && o.col === to && [...barrierRows(o, leaves)].some((r) => rows.has(r)))
+            .forEach((o) => { o.col = from; });
+          b.col = to;
+        });
+      });
+    }, { prefer: ids });
+  }
 
-      const minCol = side === "left" ? 2 : 1;
-      const maxCol = side === "left" ? 1 + s.left.barrierCols : s.right.barrierCols;
-      const targetCol = barrier.col + direction;
-      if (targetCol < minCol || targetCol > maxCol) return;
+  function moveBarrierColumn(barrierId, direction) {
+    moveBarriers([barrierId], direction);
+  }
 
-      const other = barriers.find((b) => b.barrierId !== barrierId && b.col === targetCol);
-      barrier.col = targetCol;
-      if (other) other.col = targetCol - direction;
-    });
+  /** Shift+click: add a barrier to the selection or take it out (as in the STPA workbench). */
+  function toggleBarrierSelection(barrierId) {
+    if (ui.activeBarrierId) {
+      const active = ui.activeBarrierId;
+      applyLinkMode();
+      if (active !== barrierId) ui.selectedBarrierIds.add(active);
+    }
+    if (ui.selectedIds.size) {
+      const keep = new Set(ui.selectedBarrierIds);
+      clearComponentSelection();
+      keep.forEach((id) => ui.selectedBarrierIds.add(id));
+    }
+    if (ui.selectedBarrierIds.has(barrierId)) ui.selectedBarrierIds.delete(barrierId);
+    else ui.selectedBarrierIds.add(barrierId);
+    applySelectionUI();
   }
 
   function moveCardRow(domId, direction) {
@@ -2095,7 +2313,8 @@
     addConsequence,
     setTheme: (btn) => setTheme(btn.dataset.themeValue),
     exportState: exportStateToFile,
-    importState: () => document.getElementById("import-state-file")?.click(),
+    importState: () => openFile(),
+    newDiagram: () => newDiagram(),
     toggleHelp: () => {
       const dlg = document.getElementById("help-dialog");
       if (!dlg) return;
@@ -2137,6 +2356,24 @@
       if (!ui.activeBarrierId) return;
       applyLegendRow(ui.activeBarrierId, row);
     });
+  });
+
+  // Selected barriers (Shift+click): ←/→ move them together, Esc clears the selection.
+  document.addEventListener("keydown", (evt) => {
+    if (ui.activeBarrierId || !ui.selectedBarrierIds.size) return;
+    if (document.activeElement && document.activeElement.isContentEditable) return;
+    if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
+    if (evt.key === "ArrowLeft" || evt.key === "ArrowRight") {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      moveBarriers([...ui.selectedBarrierIds], evt.key === "ArrowLeft" ? -1 : 1);
+      return;
+    }
+    if (evt.key === "Escape") {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      clearComponentSelection();
+    }
   });
 
   document.addEventListener("keydown", (evt) => {
@@ -2234,6 +2471,7 @@
 
   document.addEventListener("mousedown", (evt) => {
     if (bowtie.contains(evt.target)) clearKeyboardHover();
+    if (evt.shiftKey && evt.target.closest(".barrier")) evt.preventDefault(); // no text selection on Shift+click
     const cardEl = evt.target.closest(".card");
     if (cardEl && cardEl.classList.contains("link-target")) evt.preventDefault();
     if (isModClick(evt) && evt.target.closest(".id-tag, .desc-text")) {
@@ -2244,6 +2482,11 @@
   document.addEventListener("click", (evt) => {
     const mod = isModClick(evt);
     const barrierEl = evt.target.closest(".barrier");
+    if (evt.shiftKey && barrierEl && !evt.target.closest(".id-tag, .desc-text")) {
+      evt.preventDefault();
+      toggleBarrierSelection(barrierEl.dataset.barrierId);
+      return;
+    }
     const cardEl = evt.target.closest(".card");
     const hazardEl = evt.target.closest(".hazard");
     const topEventEl = evt.target.closest(".top-event");
@@ -2487,6 +2730,7 @@
   state = hydrateFromDom();
   render(state);
   buildConnectors();
+  markSaved();
 
   /** Replace the diagram (used by the AI panel); keeps the current theme, throws on validation errors. */
   function replaceState(raw) {
@@ -2501,7 +2745,8 @@
     getState: () => serializeState(),
     replaceState,
     // Selected cards / hazard / top event (dom ids) and the barrier in link mode.
-    getSelection: () => ({ ids: [...ui.selectedIds], barrierId: ui.activeBarrierId }),
+    getSelection: () => ({ ids: [...ui.selectedIds], barrierId: ui.activeBarrierId, barrierIds: [...ui.selectedBarrierIds] }),
+    hasUnsavedChanges,
   };
 
   const importStateInput = document.getElementById("import-state-file");

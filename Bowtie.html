@@ -330,6 +330,7 @@
 
     .card.is-selected,
     .barrier.is-selected,
+    .barrier.is-multi-selected,
     .hazard.is-selected,
     .top-event.is-selected {
       box-shadow: 0 0 2px 4px var(--interaction-shadow);
@@ -499,6 +500,18 @@
       font-size: 13px;
     }
     .help-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+    /* Short messages, e.g. why a move was not carried out (as in HTA). */
+    .status-message {
+      position: fixed; bottom: 20px; right: 20px; z-index: 1000; max-width: min(480px, calc(100vw - 40px));
+      padding: 12px 20px; border-radius: 4px; font-size: 14px; white-space: pre-wrap; pointer-events: none;
+      background: var(--color-foreground); color: var(--color-background-elevated); opacity: 0; transition: opacity 0.3s;
+    }
+    .status-message.show { opacity: 1; }
+    .status-message.warning { background: #b38600; color: #0d1117; }
+    @media print { .status-message { display: none; } }
+    .confirm-dialog { width: min(440px, calc(100vw - 32px)); font-size: 14px; }
+    .confirm-dialog p { margin: 0 0 4px; color: var(--color-foreground); }
+    .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
     .help-dialog h2 { margin: 0 0 12px; font-size: 16px; }
     .help-dialog h3 { margin: 14px 0 4px; font-size: 13px; }
     .help-dialog dl {
@@ -593,11 +606,14 @@
           <button type="button" class="action-btn" data-action="setTheme" data-theme-value="dark" data-shortcut="d" title="Dark mode (D)">
             <span class="ul">D</span><span>ark</span>
           </button>
-          <button type="button" class="action-btn" data-action="importState" title="Load a diagram from a JSON file">
-            Load…
+          <button type="button" class="action-btn" data-action="newDiagram" title="Replace the diagram with a small example that shows the whole structure">
+            New
+          </button>
+          <button type="button" class="action-btn" data-action="importState" title="Open a diagram (JSON file)">
+            Open…
           </button>
           <button type="button" class="action-btn" data-action="exportState" title="Save the diagram as a JSON file">
-            Save…
+            Save
           </button>
           <button type="button" class="action-btn" data-action="toggleHelp" data-shortcut="?" title="Visa genvägar och förkortningar (?)" aria-label="Visa genvägar och förkortningar" aria-haspopup="dialog">
             ?
@@ -768,11 +784,20 @@
             <dt>S / L / W</dt><dd>Strength</dd>
           </dl>
 
+          <h3>Flera barriärer</h3>
+          <dl>
+            <dt>Shift+klick</dt><dd>Markera eller avmarkera en barriär (som i STPA)</dd>
+            <dt>← →</dt><dd>Flytta de markerade barriärerna en kolumn tillsammans (bara på samma sida om topphändelsen; annars en varning)</dd>
+            <dt>Esc</dt><dd>Avmarkera</dd>
+          </dl>
+          <p class="help-note">Barriärer i samma kolumn överlappar aldrig: en barriär som skulle krocka får en egen kolumn direkt efter.</p>
+
           <p class="help-note">Verktygsfältets och legendens tangenter är inaktiva medan text redigeras. Öppna och stäng den här rutan med <strong>?</strong>; Esc stänger den också.</p>
         </dialog>
       </div>
     </div>
   </div>
+  <div class="status-message" id="statusMessage" role="status" aria-live="polite"></div>
   <script src="scripts/bowtie-app.js"></script>
   <script src="scripts/ai-assist.js"></script>
   <script src="scripts/bowtie-ai.js"></script>
