@@ -330,6 +330,7 @@
 
     .card.is-selected,
     .barrier.is-selected,
+    .barrier.is-multi-selected,
     .hazard.is-selected,
     .top-event.is-selected {
       box-shadow: 0 0 2px 4px var(--interaction-shadow);
@@ -773,6 +774,14 @@
             <dt>I / P / N / T / U</dt><dd>Status</dd>
             <dt>S / L / W</dt><dd>Strength</dd>
           </dl>
+
+          <h3>Flera barriärer</h3>
+          <dl>
+            <dt>Shift+klick</dt><dd>Markera eller avmarkera en barriär (som i STPA)</dd>
+            <dt>← →</dt><dd>Flytta de markerade barriärerna en kolumn tillsammans</dd>
+            <dt>Esc</dt><dd>Avmarkera</dd>
+          </dl>
+          <p class="help-note">Barriärer i samma kolumn överlappar aldrig: en barriär som skulle krocka får en egen kolumn direkt efter.</p>
 
           <p class="help-note">Verktygsfältets och legendens tangenter är inaktiva medan text redigeras. Öppna och stäng den här rutan med <strong>?</strong>; Esc stänger den också.</p>
         </dialog>

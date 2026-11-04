@@ -12,7 +12,8 @@
   let ignoreClickAfterPan = false;
 
   let state = null;
-  const ui = { activeBarrierId: null, selectedIds: new Set(), selectionAnchorId: null };
+  // selectedBarrierIds: barriers selected with Shift+click (as in the STPA workbench), moved together with ←/→.
+  const ui = { activeBarrierId: null, selectedIds: new Set(), selectionAnchorId: null, selectedBarrierIds: new Set() };
   let selectedFocusDomId = null;
   let editSession = null;
   let blurNavigation = null; // 'tab' | 'apply' | 'cancel'
@@ -719,6 +720,8 @@
     clearComponentSelection();
 
     state = nextState;
+    layoutBarriers(state, "left");
+    layoutBarriers(state, "right");
     validateState(state);
     render(state);
     buildConnectors();
@@ -1512,6 +1515,10 @@
     document.querySelectorAll(".card.is-selected, .hazard.is-selected, .top-event.is-selected").forEach((el) => {
       el.classList.remove("is-selected");
     });
+    document.querySelectorAll(".barrier.is-multi-selected").forEach((el) => el.classList.remove("is-multi-selected"));
+    ui.selectedBarrierIds.forEach((id) => {
+      getBarrierSegmentEls(id).forEach((seg) => seg.classList.add("is-multi-selected"));
+    });
     ui.selectedIds.forEach((domId) => {
       if (domId === "hazard") {
         document.querySelector(".hazard")?.classList.add("is-selected");
@@ -1600,11 +1607,58 @@
     updateTabOrder();
   }
 
-  function commit(mutator) {
+  /** Apply a change, then lay the barriers out so none overlap (see layoutBarriers). `hint` says which barriers
+      keep their column when two collide (prefer) and which give way (defer). */
+  function commit(mutator, hint = {}) {
     mutator(state);
+    layoutBarriers(state, "left", hint);
+    layoutBarriers(state, "right", hint);
     validateState(state);
     render(state);
     buildConnectors();
+  }
+
+  /** Rows a barrier covers: from what it protects once linked, else from its authored segments. */
+  function barrierRows(barrier, leaves) {
+    const segs = barrier.everLinked ? computeBarrierSegments(barrier, leaves) : barrier.authoredSegments || [];
+    const rows = new Set();
+    segs.forEach((seg) => {
+      for (let r = seg.row; r < seg.row + seg.rowSpan; r++) rows.add(r);
+    });
+    return rows;
+  }
+
+  /**
+   * No two barriers in one column may cover the same row. Columns keep their order (it is the order along the
+   * path to and from the top event); barriers that would overlap in a column get columns of their own right after
+   * it, and empty columns are dropped. Within a column, `prefer`red barriers keep it first and `defer`red ones give
+   * way first; otherwise the earlier barrier in the list keeps it.
+   */
+  function layoutBarriers(s, side, { prefer = [], defer = [] } = {}) {
+    const zone = side === "left" ? s.left : s.right;
+    const leaves = side === "left" ? s.left.causes : s.right.consequences;
+    const barriers = zone.barriers || [];
+    const first = side === "left" ? 2 : 1;
+    const rank = (b) => (prefer.includes(b.barrierId) ? 0 : defer.includes(b.barrierId) ? 2 : 1);
+    const order = new Map(barriers.map((b, i) => [b.barrierId, i]));
+    // Group by the columns as they are now, before any barrier is given a new one.
+    const groups = new Map();
+    barriers.forEach((b) => groups.set(b.col, [...(groups.get(b.col) || []), b]));
+    let next = first;
+    [...groups.keys()].sort((a, b) => a - b).forEach((c) => {
+      const group = groups.get(c)
+        .sort((a, b) => rank(a) - rank(b) || order.get(a.barrierId) - order.get(b.barrierId));
+      const taken = []; // taken[i]: rows used in output column next + i
+      group.forEach((b) => {
+        const rows = barrierRows(b, leaves);
+        let i = taken.findIndex((t) => ![...rows].some((r) => t.has(r)));
+        if (i < 0) { taken.push(new Set()); i = taken.length - 1; }
+        rows.forEach((r) => taken[i].add(r));
+        b.col = next + i;
+      });
+      next += taken.length;
+    });
+    zone.barrierCols = next - first;
   }
 
   // ---------- Connectors ----------
@@ -1819,6 +1873,8 @@
       else document.getElementById(domId)?.classList.remove("is-selected");
     });
     ui.selectedIds.clear();
+    ui.selectedBarrierIds.clear();
+    document.querySelectorAll(".barrier.is-multi-selected").forEach((el) => el.classList.remove("is-multi-selected"));
     ui.selectionAnchorId = null;
     selectedFocusDomId = null;
     selectionLayoutSnapshot = null;
@@ -1982,7 +2038,8 @@
       barrier.authoredSegments = computeBarrierSegments(barrier, leaves);
     }
     clearLinkModeUI(prevBarrierId);
-    commit(() => {});
+    // A barrier whose protected paths changed gives way if it now overlaps another barrier in its column.
+    commit(() => {}, { defer: [prevBarrierId] });
   }
 
   function exitLinkMode() {
@@ -2021,22 +2078,54 @@
     });
   }
 
-  function moveBarrierColumn(barrierId, direction) {
+  /** Move barriers one column left (-1) or right (+1), together. On each side the moved barriers keep their
+      order and their target column; the barriers there that they would overlap take their place. Nothing moves
+      if one of them is already at the edge. */
+  function moveBarriers(barrierIds, direction) {
+    const ids = [...new Set(barrierIds)];
     commit((s) => {
-      const side = barrierSide(barrierId);
-      const barriers = side === "left" ? s.left.barriers : s.right.barriers;
-      const barrier = barriers.find((b) => b.barrierId === barrierId);
-      if (!barrier) return;
+      ["left", "right"].forEach((side) => {
+        const zone = side === "left" ? s.left : s.right;
+        const leaves = side === "left" ? s.left.causes : s.right.consequences;
+        const moving = zone.barriers.filter((b) => ids.includes(b.barrierId));
+        if (!moving.length) return;
+        const minCol = side === "left" ? 2 : 1;
+        const maxCol = side === "left" ? 1 + zone.barrierCols : zone.barrierCols;
+        if (moving.some((b) => b.col + direction < minCol || b.col + direction > maxCol)) return;
+        // Furthest in the direction of travel first, so a block of barriers moves as a block.
+        moving.sort((a, b) => (b.col - a.col) * direction);
+        moving.forEach((b) => {
+          const from = b.col;
+          const to = from + direction;
+          const rows = barrierRows(b, leaves);
+          zone.barriers
+            .filter((o) => !ids.includes(o.barrierId) && o.col === to && [...barrierRows(o, leaves)].some((r) => rows.has(r)))
+            .forEach((o) => { o.col = from; });
+          b.col = to;
+        });
+      });
+    }, { prefer: ids });
+  }
 
-      const minCol = side === "left" ? 2 : 1;
-      const maxCol = side === "left" ? 1 + s.left.barrierCols : s.right.barrierCols;
-      const targetCol = barrier.col + direction;
-      if (targetCol < minCol || targetCol > maxCol) return;
+  function moveBarrierColumn(barrierId, direction) {
+    moveBarriers([barrierId], direction);
+  }
 
-      const other = barriers.find((b) => b.barrierId !== barrierId && b.col === targetCol);
-      barrier.col = targetCol;
-      if (other) other.col = targetCol - direction;
-    });
+  /** Shift+click: add a barrier to the selection or take it out (as in the STPA workbench). */
+  function toggleBarrierSelection(barrierId) {
+    if (ui.activeBarrierId) {
+      const active = ui.activeBarrierId;
+      applyLinkMode();
+      if (active !== barrierId) ui.selectedBarrierIds.add(active);
+    }
+    if (ui.selectedIds.size) {
+      const keep = new Set(ui.selectedBarrierIds);
+      clearComponentSelection();
+      keep.forEach((id) => ui.selectedBarrierIds.add(id));
+    }
+    if (ui.selectedBarrierIds.has(barrierId)) ui.selectedBarrierIds.delete(barrierId);
+    else ui.selectedBarrierIds.add(barrierId);
+    applySelectionUI();
   }
 
   function moveCardRow(domId, direction) {
@@ -2252,6 +2341,24 @@
     });
   });
 
+  // Selected barriers (Shift+click): ←/→ move them together, Esc clears the selection.
+  document.addEventListener("keydown", (evt) => {
+    if (ui.activeBarrierId || !ui.selectedBarrierIds.size) return;
+    if (document.activeElement && document.activeElement.isContentEditable) return;
+    if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
+    if (evt.key === "ArrowLeft" || evt.key === "ArrowRight") {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      moveBarriers([...ui.selectedBarrierIds], evt.key === "ArrowLeft" ? -1 : 1);
+      return;
+    }
+    if (evt.key === "Escape") {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      clearComponentSelection();
+    }
+  });
+
   document.addEventListener("keydown", (evt) => {
     if (!ui.activeBarrierId) return;
     if (document.activeElement && document.activeElement.isContentEditable) return;
@@ -2347,6 +2454,7 @@
 
   document.addEventListener("mousedown", (evt) => {
     if (bowtie.contains(evt.target)) clearKeyboardHover();
+    if (evt.shiftKey && evt.target.closest(".barrier")) evt.preventDefault(); // no text selection on Shift+click
     const cardEl = evt.target.closest(".card");
     if (cardEl && cardEl.classList.contains("link-target")) evt.preventDefault();
     if (isModClick(evt) && evt.target.closest(".id-tag, .desc-text")) {
@@ -2357,6 +2465,11 @@
   document.addEventListener("click", (evt) => {
     const mod = isModClick(evt);
     const barrierEl = evt.target.closest(".barrier");
+    if (evt.shiftKey && barrierEl && !evt.target.closest(".id-tag, .desc-text")) {
+      evt.preventDefault();
+      toggleBarrierSelection(barrierEl.dataset.barrierId);
+      return;
+    }
     const cardEl = evt.target.closest(".card");
     const hazardEl = evt.target.closest(".hazard");
     const topEventEl = evt.target.closest(".top-event");
@@ -2615,7 +2728,7 @@
     getState: () => serializeState(),
     replaceState,
     // Selected cards / hazard / top event (dom ids) and the barrier in link mode.
-    getSelection: () => ({ ids: [...ui.selectedIds], barrierId: ui.activeBarrierId }),
+    getSelection: () => ({ ids: [...ui.selectedIds], barrierId: ui.activeBarrierId, barrierIds: [...ui.selectedBarrierIds] }),
     hasUnsavedChanges,
   };
 
