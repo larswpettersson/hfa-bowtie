@@ -4058,7 +4058,7 @@
     $.toBottom = btn("↓", { className: "ai-tobottom", title: "Go to the latest entry", hidden: true });
     const logWrap = el("div", { className: "ai-logwrap" }, $.log, $.toBottom);
     $.status = el("div", { className: "ai-status" });
-    $.prompt = el("textarea", { placeholder: "Ask about the analysis… (Ctrl/⌘+Enter sends)", ariaLabel: "Question" });
+    $.prompt = el("textarea", { placeholder: "Ask about the analysis… (Enter sends, Shift+Enter for a new line)", ariaLabel: "Question" });
     $.modelPick = el("select", { title: "Model for the next question", ariaLabel: "Model for the next question" });
     $.send = btn("Send", { type: "submit", className: "primary" });
     $.chat = el("form", { className: "ai-chat" }, $.prompt, el("div", { className: "row" }, $.modelPick, $.send));
@@ -4449,7 +4449,13 @@
       if (busy) { busy.abort(); return; }
       const t = $.prompt.value; $.prompt.value = ""; send(t);
     });
-    $.prompt.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $.chat.requestSubmit(); });
+    // Enter sends, Shift+Enter gives a new line (design principle 4.6). Nothing is sent from an empty field,
+    // while a reply is running (only Stop ends it) or while an input method (IME) is composing.
+    $.prompt.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      if (!busy && $.prompt.value.trim()) $.chat.requestSubmit();
+    });
     /** Clears the conversation; the tools also call it on New, since earlier turns concern the old analysis. */
     function clearConversation() { if (busy) busy.abort(); history = []; transcript.length = 0; $.log.replaceChildren(); setStatus(""); updateToBottom(); }
     $.clear.addEventListener("click", clearConversation);
