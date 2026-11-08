@@ -412,7 +412,18 @@
   .ai-settings textarea { min-height: 180px; width: 100%; font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; }
   .ai-settings .hint { font-size: 12px; color: var(--color-foreground-muted); margin: 4px 0; }
   .ai-settings .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-  .ai-toggle.is-active { box-shadow: inset 0 0 0 2px var(--color-brand-primary, #d70000); }
+  /* The panel toggle is an icon button with only hover and pressed (pressed lasts while the mouse button is down); it has no status. */
+  .ai-toggle { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; line-height: 0; }
+  .ai-toggle svg { width: 24px; height: 18px; display: block; }
+  .ai-toggle:active { background: var(--color-foreground); border-color: var(--color-foreground); color: var(--color-background-elevated); }
+  .ai-head .ai-toggle { margin-left: 0; }
+  /* Without a provider: a warning pill and a box in the log. Status is shown with the fill only. */
+  .ai-panel { --ai-warn-bg: #fad153; }
+  body[data-theme="dark"] .ai-panel { --ai-warn-bg: #544a06; }
+  .ai-pill.warning { background: var(--color-background-warning, var(--ai-warn-bg)); color: var(--color-foreground); border-color: var(--color-foreground); }
+  .ai-noprovider { background: var(--color-background-warning, var(--ai-warn-bg)); color: var(--color-foreground); border: 1px solid var(--color-foreground);
+    border-radius: 6px; padding: 8px 12px; margin: 0 0 10px; }
+  .ai-panel.no-provider .ai-msg.welcome { display: none; }
   @media (max-width: 760px) { body.ai-open { margin-right: 0; } .ai-panel { width: 100vw; } .ai-resize { display: none; } }
   @media print { .ai-panel, .ai-toggle { display: none !important; } body.ai-open { margin-right: 0; } }
   `;
@@ -429,18 +440,21 @@
     /* ── Markup ── */
     const $ = {};
     const btn = (label, props = {}) => el("button", { type: "button", textContent: label, ...props });
-    $.toggle = btn("AI…", { className: `${cfg.buttonClass || ""} ai-toggle`, title: "AI analysis panel (A)", ariaLabel: "Open the AI analysis panel" });
-    $.toggle.setAttribute("aria-expanded", "false");
+    // An icon button: a window with a panel on the right. It sits at the right end of the toolbar while the panel is hidden
+    // and in the panel's header while it is open, so it is in the same place on the screen (design principle 4.7).
+    $.toggle = btn("", { className: `${cfg.buttonClass || ""} ai-toggle` });
+    $.toggle.innerHTML = '<svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><rect x=".75" y=".75" width="22.5" height="16.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="15.75" y1="1.5" x2="15.75" y2="16.5" stroke="currentColor" stroke-width="1.5"/></svg>';
+    $.toggle.setAttribute("aria-expanded", "true");
+    $.toggle.setAttribute("aria-controls", "ai-panel");
     cfg.toolbar?.appendChild($.toggle);
 
-    $.panel = el("aside", { className: "ai-panel", hidden: true, ariaLabel: cfg.title });
+    $.panel = el("aside", { className: "ai-panel", id: "ai-panel", hidden: true, ariaLabel: cfg.title });
     $.resize = el("div", { className: "ai-resize", tabIndex: 0, title: "Drag to resize (arrow keys work too)" });
     $.resize.setAttribute("role", "separator");
     $.resize.setAttribute("aria-orientation", "vertical");
     $.pill = el("span", { className: "ai-pill" });
     $.settingsBtn = btn("Settings…", { title: "Provider, API key, model and system prompt" });
-    $.close = btn("✕", { title: "Close the panel", ariaLabel: "Close the AI panel" });
-    const head = el("div", { className: "ai-head" }, el("strong", { textContent: cfg.title }), $.pill, $.settingsBtn, $.close);
+    const head = el("div", { className: "ai-head" }, el("strong", { textContent: cfg.title }), $.pill, $.settingsBtn);
     $.quick = el("div", { className: "ai-quick" });
     $.scopeText = el("span");
     $.keep = el("input", { type: "checkbox" });
@@ -556,6 +570,7 @@
       updateBadge();
     }
 
+    const providerName = () => f.provider.selectedOptions[0]?.text.replace(/ \(.*\)$/, "").replace(/^(Anthropic|Google) /, "") || settings.provider;
     const providerLabel = () => ({
       claude: settings.claude_model || DEFAULTS.claude_model,
       gemini: settings.gemini_model || DEFAULTS.gemini_model,
@@ -588,7 +603,7 @@
     function updateBadge() {
       const pick = $.modelPick, p = settings.provider, cur = providerLabel();
       $.dialog.querySelectorAll("fieldset[data-provider]").forEach((n) => n.classList.toggle("active", n.dataset.provider === p));
-      $.pill.textContent = f.provider.selectedOptions[0]?.text.replace(/ \(.*\)$/, "").replace(/^(Anthropic|Google) /, "") || p;
+      applyState();
       pick.replaceChildren();
       const fetched = fetchedModels[p];
       const family = (id) => CLAUDE_MODELS.find((x) => x.id === id)?.family || "Other";
@@ -640,17 +655,22 @@
     };
     let width = setWidth(store.get(prefix + "ai-width") || 440);
     const relayout = () => window.dispatchEvent(new Event("resize")); // hosts redraw connectors on resize
-    function setOpen(open) {
+    function setOpen(open, { focus = true, remember = true } = {}) {
+      const hadFocus = document.activeElement === $.toggle;
       $.panel.hidden = !open;
       document.body.classList.toggle("ai-open", open);
-      $.toggle.classList.toggle("is-active", open);
+      // the toggle moves between the toolbar (hidden) and the panel header (open); the keyboard focus goes with it
+      (open ? head : cfg.toolbar)?.appendChild($.toggle);
+      const label = open ? "Hide AI panel" : "Show AI panel";
+      $.toggle.title = `${label} (A)`;
+      $.toggle.setAttribute("aria-label", label);
       $.toggle.setAttribute("aria-expanded", String(open));
-      store.set(prefix + "ai-open", open);
-      if (open) { updateScope(); $.prompt.focus(); }
+      if (remember) store.set(prefix + "ai-open", open);
+      if (open) { updateScope(); if (focus) $.prompt.focus(); }
+      else if (hadFocus) $.toggle.focus();
       relayout();
     }
     $.toggle.addEventListener("click", () => setOpen($.panel.hidden));
-    $.close.addEventListener("click", () => setOpen(false));
     document.addEventListener("keydown", (e) => {
       if (e.key !== "a" && e.key !== "A") return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -737,11 +757,31 @@
       return msg;
     }
 
-    function setBusy(on) {
-      $.send.textContent = on ? "Stop" : "Send";
-      $.send.classList.toggle("primary", !on);
-      $.quick.querySelectorAll("button").forEach((b) => (b.disabled = on));
+    /** A provider is set up when its key (or, for a local model, its address) is there. The pill shows the chosen provider,
+        not whether the connection answers. */
+    function isConfigured() {
+      const s = settings;
+      return { claude: !!s.claude_key, gemini: !!s.gemini_key, hf: !!s.hf_key, local: !!(s.local_endpoint || DEFAULTS.local_endpoint) }[s.provider] || false;
     }
+    const PLACEHOLDER = "Ask about the analysis… (Enter sends, Shift+Enter for a new line)";
+    /** One primary button at a time (design principle 4.5): Send, or Settings… when no provider is set up. */
+    function applyState(busyNow = !!busy) {
+      const ok = isConfigured();
+      $.panel.classList.toggle("no-provider", !ok);
+      $.pill.textContent = ok ? providerName() : "No provider";
+      $.pill.classList.toggle("warning", !ok);
+      $.settingsBtn.classList.toggle("primary", !ok);
+      $.send.textContent = busyNow ? "Stop" : "Send";
+      $.send.classList.toggle("primary", ok && !busyNow);
+      $.send.disabled = !ok && !busyNow;
+      $.prompt.disabled = !ok;
+      $.prompt.placeholder = ok ? PLACEHOLDER : "Set up a provider in Settings… first";
+      $.quick.querySelectorAll("button").forEach((b) => (b.disabled = busyNow || !ok));
+      const box = $.log.querySelector(".ai-noprovider");
+      if (ok && box) box.remove();
+      if (!ok && !box) $.log.prepend(el("div", { className: "ai-noprovider", textContent: "The AI assistant is not set up yet. Open Settings…, choose a provider (Claude, Gemini, Hugging Face or a local model) and enter its key or address. Then the question field works." }));
+    }
+    function setBusy(on) { applyState(on); }
     const setStatus = (t) => ($.status.textContent = t);
 
     function addMessage(kind, text, meta) {
@@ -854,7 +894,7 @@
       if (!busy && $.prompt.value.trim()) $.chat.requestSubmit();
     });
     /** Clears the conversation; the tools also call it on New, since earlier turns concern the old analysis. */
-    function clearConversation() { if (busy) busy.abort(); history = []; transcript.length = 0; $.log.replaceChildren(); setStatus(""); updateToBottom(); }
+    function clearConversation() { if (busy) busy.abort(); history = []; transcript.length = 0; $.log.replaceChildren(); applyState(); setStatus(""); updateToBottom(); }
     $.clear.addEventListener("click", clearConversation);
     $.saveLog.addEventListener("click", () => {
       const md = [`# ${cfg.title}`, "", `_Exported ${new Date().toISOString()} · ${providerLabel()}_`, "",
@@ -866,8 +906,10 @@
     /* ── Boot ── */
     loadSettings();
     renderQuick();
-    if (cfg.welcome) addMessage("assistant", cfg.welcome);
-    if (store.get(prefix + "ai-open")) setOpen(true);
+    if (cfg.welcome) { addMessage("assistant", cfg.welcome); $.log.lastElementChild?.classList.add("welcome"); }
+    applyState();
+    // Open by default; a choice made with the toggle is remembered.
+    setOpen(store.get(prefix + "ai-open") !== false, { focus: false, remember: false });
     refreshModels();
 
     return { open: () => setOpen(true), close: () => setOpen(false), send, clear: clearConversation, get settings() { return settings; } };
