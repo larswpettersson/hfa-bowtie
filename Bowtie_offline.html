@@ -3604,15 +3604,20 @@
 /*
   HFA AI assistant — a side panel that sends the tool's current analysis to an LLM and can apply its proposals.
 
-  Ported from the HFA STPA Workbench (hfa-stpa/workbench/index.html, sections 4 and 6): the same provider adapters
-  (Anthropic Claude, Google Gemini, local Ollama / LM Studio / LocalAI; plus Hugging Face Inference Providers), the same model picker, streaming, Markdown
-  rendering, foldable answers and Markdown export. The same file is used by hfa-hta and hfa-bowtie; keep the copies equal.
+  One panel for every HFA tool: provider adapters (Anthropic Claude, Google Gemini, Hugging Face Inference Providers,
+  local Ollama / LM Studio / LocalAI), the model picker, streaming, Markdown rendering, foldable answers, Markdown export,
+  the icon toggle (design principle 4.7) and the state without a provider.
+
+  THIS FILE IS A COPY. The source is hfa-ds/scripts/ai-panel/ai-assist.js. Change it there and run
+  `npm run sync:ai-panel` in hfa-ds to copy it into hfa-hta, hfa-bowtie and hfa-stpa (see arkitektur.md, "AI-panelen").
+  What differs between the tools is configured when the tool mounts the panel, as below, never by editing a copy.
 
   The host tool mounts it with an adapter:
 
     HFAAssist.mount({
       id: "hta",                       // localStorage prefix for the per-tool settings (system prompt, panel width)
       title: "HTA analysis",
+      subject: "the analysis",         // "Ask about …" in the question field
       toolbar: element,                // the "AI" toggle button is appended here
       buttonClass: "action-btn",
       systemPrompt: "…",               // editable default system prompt
@@ -4072,7 +4077,7 @@
     $.toBottom = btn("↓", { className: "ai-tobottom", title: "Go to the latest entry", hidden: true });
     const logWrap = el("div", { className: "ai-logwrap" }, $.log, $.toBottom);
     $.status = el("div", { className: "ai-status" });
-    $.prompt = el("textarea", { placeholder: "Ask about the analysis… (Enter sends, Shift+Enter for a new line)", ariaLabel: "Question" });
+    $.prompt = el("textarea", { placeholder: `Ask about ${cfg.subject || "the analysis"}… (Enter sends, Shift+Enter for a new line)`, ariaLabel: "Question" });
     $.modelPick = el("select", { title: "Model for the next question", ariaLabel: "Model for the next question" });
     $.send = btn("Send", { type: "submit", className: "primary" });
     $.chat = el("form", { className: "ai-chat" }, $.prompt, el("div", { className: "row" }, $.modelPick, $.send));
@@ -4366,14 +4371,13 @@
       const s = settings;
       return { claude: !!s.claude_key, gemini: !!s.gemini_key, hf: !!s.hf_key, local: !!(s.local_endpoint || DEFAULTS.local_endpoint) }[s.provider] || false;
     }
-    const PLACEHOLDER = "Ask about the analysis… (Enter sends, Shift+Enter for a new line)";
-    /** One primary button at a time (design principle 4.5): Send, or Settings… when no provider is set up. */
+    const PLACEHOLDER = `Ask about ${cfg.subject || "the analysis"}… (Enter sends, Shift+Enter for a new line)`;
+    /** Send is the primary button, the one Enter triggers (design principle 4.5). Without a provider it is disabled and neutral, and nothing else is primary; Settings… is an ordinary button. */
     function applyState(busyNow = !!busy) {
       const ok = isConfigured();
       $.panel.classList.toggle("no-provider", !ok);
       $.pill.textContent = ok ? providerName() : "No provider";
       $.pill.classList.toggle("warning", !ok);
-      $.settingsBtn.classList.toggle("primary", !ok);
       $.send.textContent = busyNow ? "Stop" : "Send";
       $.send.classList.toggle("primary", ok && !busyNow);
       $.send.disabled = !ok && !busyNow;
