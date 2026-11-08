@@ -769,13 +769,12 @@
       return { claude: !!s.claude_key, gemini: !!s.gemini_key, hf: !!s.hf_key, local: !!(s.local_endpoint || DEFAULTS.local_endpoint) }[s.provider] || false;
     }
     const PLACEHOLDER = `Ask about ${cfg.subject || "the analysis"}… (Enter sends, Shift+Enter for a new line)`;
-    /** One primary button at a time (design principle 4.5): Send, or Settings… when no provider is set up. */
+    /** Send is the primary button, the one Enter triggers (design principle 4.5). Without a provider it is disabled and neutral, and nothing else is primary; Settings… is an ordinary button. */
     function applyState(busyNow = !!busy) {
       const ok = isConfigured();
       $.panel.classList.toggle("no-provider", !ok);
       $.pill.textContent = ok ? providerName() : "No provider";
       $.pill.classList.toggle("warning", !ok);
-      $.settingsBtn.classList.toggle("primary", !ok);
       $.send.textContent = busyNow ? "Stop" : "Send";
       $.send.classList.toggle("primary", ok && !busyNow);
       $.send.disabled = !ok && !busyNow;
