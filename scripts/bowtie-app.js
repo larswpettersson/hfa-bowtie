@@ -1121,82 +1121,74 @@
         selectComponent(el);
       }
     }
-    el.classList.add("is-keyboard-hover");
+    setIndicated(el);
   }
 
+  /* Indication (design principle 5.3): the card, barrier, hazard or top event the mouse or the arrow keys point at gets the
+     hovered shadow. The mouse and the keys take over from each other, only a real mouse movement counts, and the last
+     indicated object is where the next arrow starts. A barrier is indicated with all its segments. */
+  let indicationOrigin = null;
+  function setIndicated(el) {
+    clearKeyboardHover();
+    if (!el) return;
+    indicationOrigin = el.id || el.dataset.barrierId || null;
+    if (el.classList.contains("barrier")) {
+      document.querySelectorAll(`.barrier[data-barrier-id="${el.dataset.barrierId}"]`).forEach((seg) => seg.classList.add("is-keyboard-hover"));
+    } else {
+      el.classList.add("is-keyboard-hover");
+    }
+  }
+
+  /** Every object an arrow can reach, with its on-screen rectangle (a barrier: all its segments together). */
+  function navigableObjects() {
+    const out = [];
+    const barriers = new Map();
+    document.querySelectorAll(".card, .barrier, .hazard, .top-event").forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (!r.width && !r.height) return;
+      if (el.classList.contains("barrier")) {
+        const key = el.dataset.barrierId;
+        const prev = barriers.get(key);
+        if (!prev) barriers.set(key, { el, key, r: { left: r.left, right: r.right, top: r.top, bottom: r.bottom } });
+        else {
+          prev.r.left = Math.min(prev.r.left, r.left); prev.r.right = Math.max(prev.r.right, r.right);
+          prev.r.top = Math.min(prev.r.top, r.top); prev.r.bottom = Math.max(prev.r.bottom, r.bottom);
+        }
+      } else {
+        out.push({ el, key: el.id || (el.classList.contains("hazard") ? "hazard" : "top-event"), r });
+      }
+    });
+    barriers.forEach((b) => out.push(b));
+    return out;
+  }
+
+  /** An arrow moves the indication to the nearest object in the arrow's direction on the screen (5.2); same row or column first. */
   function navigateComponents(key) {
-    const hoverOnly = { select: false };
-    const causes = getCausesInRowOrder();
-    const consequences = getConsequencesInRowOrder();
-    const preventiveBarriers = firstBarrierSegmentsInColumnOrder(zoneLeft);
-    const reactiveBarriers = firstBarrierSegmentsInColumnOrder(zoneRight);
-    const hazard = document.querySelector(".hazard");
-    const topEvent = document.querySelector(".top-event");
-
-    const current = getCurrentNavComponentEl();
-    if (!current) {
-      if (causes.length) setKeyboardNavTarget(causes[0], hoverOnly);
-      else if (preventiveBarriers.length) setKeyboardNavTarget(preventiveBarriers[0], hoverOnly);
-      else if (hazard) setKeyboardNavTarget(hazard, hoverOnly);
-      else if (topEvent) setKeyboardNavTarget(topEvent, hoverOnly);
-      else if (reactiveBarriers.length) setKeyboardNavTarget(reactiveBarriers[0], hoverOnly);
-      else if (consequences.length) setKeyboardNavTarget(consequences[0], hoverOnly);
-      return;
+    const dir = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }[key];
+    if (!dir) return;
+    const items = navigableObjects();
+    if (!items.length) return;
+    const hovered = getKeyboardHoverEl();
+    const keyOf = (el) => (el ? (el.classList.contains("barrier") ? el.dataset.barrierId : el.id || (el.classList.contains("hazard") ? "hazard" : "top-event")) : null);
+    const startKey = keyOf(hovered) || indicationOrigin || keyOf(getSelectedComponentEl());
+    const cur = items.find((it) => it.key === startKey);
+    const go = (it) => { setIndicated(it.el); it.el.scrollIntoView?.({ block: "nearest", inline: "nearest" }); };
+    if (!cur) { go(items.slice().sort((p, q) => p.r.top - q.r.top || p.r.left - q.r.left)[0]); return; }
+    if (!hovered) { go(cur); return; } // the first arrow after the mouse left shows the remembered object
+    const [dx, dy] = dir;
+    const cx = (cur.r.left + cur.r.right) / 2, cy = (cur.r.top + cur.r.bottom) / 2;
+    let best = null;
+    for (const it of items) {
+      if (it === cur) continue;
+      const mx = (it.r.left + it.r.right) / 2 - cx, my = (it.r.top + it.r.bottom) / 2 - cy;
+      const along = dx ? mx * dx : my * dy, across = dx ? Math.abs(my) : Math.abs(mx);
+      if (along <= 1 || across > along * 1.5) continue; // only objects in the arrow's direction, not far to the side
+      const overlap = dx ? Math.min(it.r.bottom, cur.r.bottom) - Math.max(it.r.top, cur.r.top) > 0
+        : Math.min(it.r.right, cur.r.right) - Math.max(it.r.left, cur.r.left) > 0;
+      const score = [overlap ? 0 : 1, along + 2 * across];
+      if (!best || score[0] < best.score[0] || (score[0] === best.score[0] && score[1] < best.score[1])) best = { it, score };
     }
-
-    const kind = getComponentNavKind(current);
-    let next = null;
-
-    if (kind === "cause") {
-      const index = cardNavIndex(causes, current);
-      if (key === "ArrowUp" && index > 0) next = causes[index - 1];
-      else if (key === "ArrowDown" && index >= 0 && index < causes.length - 1) next = causes[index + 1];
-      else if (key === "ArrowRight") {
-        next = preventiveBarriers[0] || topEvent || hazard;
-      }
-    } else if (kind === "preventiveBarrier") {
-      const index = barrierNavIndex(preventiveBarriers, current);
-      if (key === "ArrowLeft") {
-        next = index > 0 ? preventiveBarriers[index - 1] : causes[0] || null;
-      } else if (key === "ArrowRight") {
-        next =
-          index >= 0 && index < preventiveBarriers.length - 1
-            ? preventiveBarriers[index + 1]
-            : topEvent || hazard;
-      }
-    } else if (kind === "hazard") {
-      if (key === "ArrowLeft") {
-        next = preventiveBarriers[preventiveBarriers.length - 1] || causes[causes.length - 1] || null;
-      } else if (key === "ArrowRight") {
-        next = topEvent;
-      }
-    } else if (kind === "top-event") {
-      if (key === "ArrowLeft") {
-        next = preventiveBarriers[preventiveBarriers.length - 1] || causes[causes.length - 1] || hazard;
-      } else if (key === "ArrowRight") {
-        next = reactiveBarriers[0] || consequences[0] || null;
-      }
-    } else if (kind === "reactiveBarrier") {
-      const index = barrierNavIndex(reactiveBarriers, current);
-      if (key === "ArrowLeft") {
-        next = index > 0 ? reactiveBarriers[index - 1] : topEvent || hazard;
-      } else if (key === "ArrowRight") {
-        next =
-          index >= 0 && index < reactiveBarriers.length - 1
-            ? reactiveBarriers[index + 1]
-            : consequences[0] || null;
-      }
-    } else if (kind === "consequence") {
-      const index = cardNavIndex(consequences, current);
-      if (key === "ArrowUp" && index > 0) next = consequences[index - 1];
-      else if (key === "ArrowDown" && index >= 0 && index < consequences.length - 1) {
-        next = consequences[index + 1];
-      } else if (key === "ArrowLeft") {
-        next = reactiveBarriers[reactiveBarriers.length - 1] || topEvent || hazard;
-      }
-    }
-
-    if (next) setKeyboardNavTarget(next, hoverOnly);
+    if (best) go(best.it);
   }
 
   function getLinkTargetCardEls() {
@@ -2312,6 +2304,7 @@
     addReactiveBarrier,
     addConsequence,
     setTheme: (btn) => setTheme(btn.dataset.themeValue),
+    toggleTheme: () => setTheme(document.body.dataset.theme === "dark" ? "light" : "dark"),
     exportState: exportStateToFile,
     importState: () => openFile(),
     newDiagram: () => newDiagram(),
@@ -2332,6 +2325,20 @@
       actions.closeHelp();
     }
   });
+
+  /* The legend folds with ▾ on its header row; the choice is remembered (design principle 4.12). */
+  (function legendFold() {
+    const legend = document.getElementById("legend"), head = document.getElementById("legendToggle");
+    if (!legend || !head) return;
+    const KEY = "hfa-bowtie:legend-collapsed";
+    const apply = (collapsed) => { legend.classList.toggle("collapsed", collapsed); head.setAttribute("aria-expanded", String(!collapsed)); };
+    try { apply(localStorage.getItem(KEY) === "1"); } catch (_) { apply(false); }
+    head.addEventListener("click", () => {
+      const collapsed = !legend.classList.contains("collapsed");
+      apply(collapsed);
+      try { localStorage.setItem(KEY, collapsed ? "1" : "0"); } catch (_) { /* private window */ }
+    });
+  })();
 
   function flashButton(btn) {
     btn.classList.add("is-flashed");
@@ -2358,17 +2365,18 @@
     });
   });
 
-  // Selected barriers (Shift+click): ←/→ move them together, Esc clears the selection.
+  // Selected barriers (Shift+click): Alt/Option+←/→ move them together (5.6), Esc clears the selection.
   document.addEventListener("keydown", (evt) => {
     if (ui.activeBarrierId || !ui.selectedBarrierIds.size) return;
     if (document.activeElement && document.activeElement.isContentEditable) return;
-    if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
-    if (evt.key === "ArrowLeft" || evt.key === "ArrowRight") {
+    if (evt.metaKey || evt.ctrlKey) return;
+    if (evt.altKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
       evt.preventDefault();
       evt.stopImmediatePropagation();
       moveBarriers([...ui.selectedBarrierIds], evt.key === "ArrowLeft" ? -1 : 1);
       return;
     }
+    if (evt.altKey) return;
     if (evt.key === "Escape") {
       evt.preventDefault();
       evt.stopImmediatePropagation();
@@ -2389,6 +2397,13 @@
       return;
     }
 
+    if (evt.altKey && !evt.metaKey && !evt.ctrlKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      moveBarrierColumn(ui.activeBarrierId, evt.key === "ArrowLeft" ? -1 : 1); // Alt/Option+arrow moves (5.6)
+      return;
+    }
+
     if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
 
     if (/^[1-9]$/.test(evt.key)) {
@@ -2404,9 +2419,8 @@
     }
 
     if (evt.key === "ArrowLeft" || evt.key === "ArrowRight") {
-      evt.preventDefault();
+      evt.preventDefault(); // plain arrows never move an object (5.6)
       evt.stopImmediatePropagation();
-      moveBarrierColumn(ui.activeBarrierId, evt.key === "ArrowLeft" ? -1 : 1);
       return;
     }
 
@@ -2462,7 +2476,12 @@
       return;
     }
 
-    if (evt.metaKey || evt.ctrlKey || evt.altKey || evt.shiftKey) return;
+    if (evt.altKey && !evt.metaKey && !evt.ctrlKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
+      evt.preventDefault(); // the browser's Alt+←/→ history is stopped in the diagram
+      return;
+    }
+
+    if (evt.metaKey || evt.ctrlKey || evt.altKey || evt.shiftKey) return; // Ctrl/⌘+arrow is not used (5.4)
 
     evt.preventDefault();
     evt.stopImmediatePropagation();
@@ -2470,7 +2489,6 @@
   });
 
   document.addEventListener("mousedown", (evt) => {
-    if (bowtie.contains(evt.target)) clearKeyboardHover();
     if (evt.shiftKey && evt.target.closest(".barrier")) evt.preventDefault(); // no text selection on Shift+click
     const cardEl = evt.target.closest(".card");
     if (cardEl && cardEl.classList.contains("link-target")) evt.preventDefault();
@@ -2478,6 +2496,19 @@
       evt.preventDefault();
     }
   });
+
+  // The mouse sets the indication on the object under it (a real movement only: a scroll under a still pointer does not).
+  let lastPointer = [NaN, NaN];
+  document.addEventListener("mousemove", (evt) => {
+    if (evt.clientX === lastPointer[0] && evt.clientY === lastPointer[1]) return;
+    lastPointer = [evt.clientX, evt.clientY];
+    if (ui.activeBarrierId || isPanning) return;
+    if (!bowtie.contains(evt.target)) return;
+    const el = evt.target.closest(".card, .barrier, .hazard, .top-event");
+    if (el === getKeyboardHoverEl() || (el?.classList.contains("barrier") && el.classList.contains("is-keyboard-hover"))) return;
+    setIndicated(el);
+  });
+  bowtie.addEventListener("mouseleave", () => { if (!ui.activeBarrierId) clearKeyboardHover(); });
 
   document.addEventListener("click", (evt) => {
     const mod = isModClick(evt);
@@ -2600,8 +2631,8 @@
       return;
     }
 
-    if (evt.key === "Enter" && !evt.shiftKey) {
-      if (handleEnterOnComponent(evt)) return;
+    if ((evt.key === "Enter" && !evt.shiftKey) || (evt.key === "F2" && !evt.ctrlKey && !evt.metaKey && !evt.altKey)) {
+      if (handleEnterOnComponent(evt.key === "F2" ? { key: "Enter", shiftKey: false, preventDefault: () => evt.preventDefault() } : evt)) return;
     }
 
     if (evt.key === "Escape") {
@@ -2713,6 +2744,7 @@
   document.addEventListener("keydown", (evt) => {
     if (evt.code !== "Space" && evt.key !== " ") return;
     if (document.activeElement && document.activeElement.isContentEditable) return;
+    if (document.activeElement && document.activeElement.closest("button, a, input, textarea, select")) return; // Space activates a focused button
     evt.preventDefault();
     if (!evt.repeat) setSpacePanArmed(true);
   });

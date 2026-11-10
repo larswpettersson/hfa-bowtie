@@ -195,6 +195,10 @@
     throw new Error("Unknown provider: " + provider);
   }
 
+  /** A message in the OpenAI shape; an attached image becomes an image_url part with a data URL. */
+  const openAiMessage = (m) => !m.image ? { role: m.role, content: m.content }
+    : { role: m.role, content: [{ type: "text", text: m.content }, { type: "image_url", image_url: { url: `data:${m.image.mime};base64,${m.image.data}` } }] };
+
   async function callLLM({ provider, systemPrompt, messages, signal, onProgress }) {
     const cfg = settings;
 
@@ -210,7 +214,8 @@
         stream: true, // long answers (a whole revised analysis) outlast a non-streaming request
         cache_control: { type: "ephemeral" }, // the system prompt + analysis repeat on every question
         system: systemPrompt,
-        messages,
+        messages: messages.map((m) => !m.image ? { role: m.role, content: m.content }
+          : { role: m.role, content: [{ type: "image", source: { type: "base64", media_type: m.image.mime, data: m.image.data } }, { type: "text", text: m.content }] }),
       };
       if (!info || info.effort) {
         const effort = cfg.claude_effort || "medium";
@@ -238,7 +243,8 @@
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       const body = {
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+        contents: messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user",
+          parts: [...(m.image ? [{ inlineData: { mimeType: m.image.mime, data: m.image.data } }] : []), { text: m.content }] })),
       };
       const data = await readJson(await fetch(url, {
         method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": cfg.gemini_key }, body: JSON.stringify(body), signal,
@@ -254,7 +260,7 @@
       const res = await fetch(HF_ROUTER + "/chat/completions", {
         method: "POST", signal,
         headers: { "content-type": "application/json", authorization: "Bearer " + cfg.hf_key },
-        body: JSON.stringify({ model: cfg.hf_model || DEFAULTS.hf_model, messages: [{ role: "system", content: systemPrompt }, ...messages] }),
+        body: JSON.stringify({ model: cfg.hf_model || DEFAULTS.hf_model, messages: [{ role: "system", content: systemPrompt }, ...messages.map(openAiMessage)] }),
       });
       if (res.status === 402) throw new Error("HTTP 402: the monthly Inference Providers credits of this Hugging Face account are used up (huggingface.co/settings/billing).");
       const data = await readJson(res);
@@ -273,12 +279,14 @@
 
       if (/\/api\/generate\/?$/.test(endpoint)) { // Ollama native, single prompt
         const prompt = messages.map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`).join("\n\n") + "\n\nAssistant:";
-        const data = await post({ model, system: systemPrompt, prompt, stream: false });
+        const images = messages.filter((m) => m.image).map((m) => m.image.data);
+        const data = await post({ model, system: systemPrompt, prompt, stream: false, ...(images.length ? { images } : {}) });
         return { text: data.response ?? JSON.stringify(data), raw: data };
       }
-      const chat = [{ role: "system", content: systemPrompt }, ...messages];
+      const chat = [{ role: "system", content: systemPrompt }, ...messages.map(openAiMessage)];
       if (/\/api\/chat\/?$/.test(endpoint)) { // Ollama native chat
-        const data = await post({ model, messages: chat, stream: false });
+        const native = [{ role: "system", content: systemPrompt }, ...messages.map((m) => ({ role: m.role, content: m.content, ...(m.image ? { images: [m.image.data] } : {}) }))];
+        const data = await post({ model, messages: native, stream: false });
         return { text: data.message?.content ?? JSON.stringify(data), raw: data };
       }
       const data = await post({ model, messages: chat }); // OpenAI-compatible
@@ -402,6 +410,11 @@
   .ai-status { font-size: 12px; color: var(--color-foreground-muted); padding: 0 10px 4px; min-height: 18px; }
   .ai-chat { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--color-foreground-subtle); }
   .ai-chat textarea { resize: vertical; min-height: 54px; max-height: 220px; width: 100%; }
+  .ai-attach { display: flex; align-items: center; gap: 8px; font-size: 12px; border: 1px solid var(--color-foreground-subtle); border-radius: 8px; padding: 4px 6px; }
+  .ai-attach[hidden] { display: none; }
+  .ai-attach img { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; flex: none; }
+  .ai-attach .note { flex: 1; min-width: 0; color: var(--color-foreground-muted); }
+  .ai-chat.dropping textarea { outline: 2px dashed var(--color-brand-primary); }
   .ai-chat .row { display: flex; gap: 6px; align-items: center; }
   .ai-chat select { flex: 1; min-width: 0; }
   .ai-settings { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 16px 18px; color: var(--color-foreground);
@@ -477,7 +490,12 @@
     $.prompt = el("textarea", { placeholder: `Ask about ${cfg.subject || "the analysis"}… (Enter sends, Shift+Enter for a new line)`, ariaLabel: "Question" });
     $.modelPick = el("select", { title: "Model for the next question", ariaLabel: "Model for the next question" });
     $.send = btn("Send", { type: "submit", className: "primary" });
-    $.chat = el("form", { className: "ai-chat" }, $.prompt, el("div", { className: "row" }, $.modelPick, $.send));
+    // An image for the next question: a thumbnail with ✕. It is sent with that question only and never stored.
+    $.thumb = el("img", { alt: "Attached image" });
+    $.attachNote = el("span", { className: "note" });
+    $.attachRemove = btn("✕", { title: "Remove the image", ariaLabel: "Remove the image" });
+    $.attach = el("div", { className: "ai-attach", hidden: true }, $.thumb, $.attachNote, $.attachRemove);
+    $.chat = el("form", { className: "ai-chat" }, $.attach, $.prompt, el("div", { className: "row" }, $.modelPick, $.send));
     $.panel.append($.resize, head, $.quick, scope, logWrap, $.status, $.chat);
     document.body.appendChild($.panel);
 
@@ -725,12 +743,58 @@
       return `Analysis scope: I selected ${s.label}. Focus on the selected elements and their direct relations. Use the rest of the analysis only as context, and keep any change to a patch.\nSelected elements (JSON):\n${JSON.stringify(s.items, null, 2)}\n\nQuestion:\n`;
     }
 
+    /* ── Image attachment ── */
+    const VISION_LOCAL = /llava|vision|(^|[-:_/])vl|gemma-?3|minicpm|pixtral|moondream|bakllava|qwen.*vl/i;
+    const acceptsImages = () => {
+      const model = providerLabel() || "";
+      if (settings.provider === "local") return VISION_LOCAL.test(model);
+      if (settings.provider === "hf") return !/coder|embed|whisper|guard/i.test(model);
+      return true;
+    };
+    let attachment = null; // { mime, data (base64), url (for the thumbnail) }
+    function updateAttach() {
+      $.attach.hidden = !attachment;
+      if (!attachment) return;
+      $.thumb.src = attachment.url;
+      $.attachNote.textContent = settings.provider === "local"
+        ? "Sent to your local model with the next question only. Not saved."
+        : `Sent to ${providerName()} with the next question only. Not saved in the analysis or the export.`;
+    }
+    /** Read an image file; a large one is scaled down (longest side 1568 px) so the request stays small. */
+    async function takeImage(file) {
+      if (!file || !/^image\/(png|jpeg|gif|webp)$/.test(file.type)) { setStatus("Only PNG, JPEG, GIF and WebP images can be attached."); return; }
+      if (!acceptsImages()) { setStatus(`${providerLabel()} does not accept images. Choose a model with image support.`); return; }
+      const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+      let out = url, mime = file.type;
+      try {
+        const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+        const k = Math.min(1, 1568 / Math.max(img.naturalWidth, img.naturalHeight));
+        if (k < 1) {
+          const c = document.createElement("canvas");
+          c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          mime = "image/jpeg"; out = c.toDataURL(mime, 0.85);
+        }
+      } catch (_) { /* keep the original */ }
+      attachment = { mime, data: out.slice(out.indexOf(",") + 1), url: out };
+      setStatus("");
+      updateAttach();
+    }
+    const imageOf = (dt) => [...(dt?.files || [])].find((f) => f.type.startsWith("image/")) || null;
+    $.prompt.addEventListener("paste", (e) => { const f = imageOf(e.clipboardData); if (f) { e.preventDefault(); takeImage(f); } });
+    $.chat.addEventListener("dragover", (e) => { if ([...(e.dataTransfer?.items || [])].some((i) => i.kind === "file")) { e.preventDefault(); $.chat.classList.add("dropping"); } });
+    $.chat.addEventListener("dragleave", () => $.chat.classList.remove("dropping"));
+    $.chat.addEventListener("drop", (e) => { $.chat.classList.remove("dropping"); const f = imageOf(e.dataTransfer); if (f || e.dataTransfer?.files?.length) { e.preventDefault(); takeImage(f || e.dataTransfer.files[0]); } });
+    $.attachRemove.addEventListener("click", () => { attachment = null; updateAttach(); $.prompt.focus(); });
+
     async function send(userText) {
       if (busy || !userText.trim()) return;
       const s = currentScope();
-      addMessage("user", userText, `Scope: ${s ? s.label : "whole analysis"}`);
+      const image = attachment ? { mime: attachment.mime, data: attachment.data } : null;
+      attachment = null; updateAttach(); // the image goes with this question only
+      addMessage("user", userText, `Scope: ${s ? s.label : "whole analysis"}${image ? " · with image" : ""}`);
       const prior = settings.keep_history ? history : [];
-      const turn = [{ role: "user", content: scopePreamble(s) + userText }];
+      const turn = [{ role: "user", content: scopePreamble(s) + userText, ...(image ? { image } : {}) }];
       busy = new AbortController();
       setBusy(true);
       const model = providerLabel();
@@ -740,6 +804,7 @@
         const { text, usage } = await callLLM({ provider: settings.provider, systemPrompt: buildSystemPrompt(), messages: [...prior, ...turn], signal: busy.signal,
           onProgress: (n) => setStatus(`Receiving from ${model}… ${n.toLocaleString()} characters`) });
         turn.push({ role: "assistant", content: text });
+        turn.forEach((m) => { delete m.image; }); // follow-up questions do not carry the image
         const tokens = usage ? ` · ${(usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0)} in / ${usage.output_tokens ?? "?"} out tokens` : "";
         addMessage("assistant", text, `${model} · ${((performance.now() - t0) / 1000).toFixed(1)} s${tokens}`);
         history.push(...turn);
