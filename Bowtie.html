@@ -310,17 +310,13 @@
 
     /* Selection / hover / linking states — matches Penpot's component
        variants (no border/colour change, shadow only). Hover is mouse-only
-       (:hover); keyboard tab into text fields does not trigger it. */
+       by the indication class, shared by the mouse and the arrow keys (5.3). */
     .card,
     .barrier {
       transition: opacity 150ms ease, box-shadow 150ms ease, color 150ms ease,
                   background-color 150ms ease, border-color 150ms ease;
     }
 
-    .card:hover,
-    .barrier:hover,
-    .hazard:hover,
-    .top-event:hover,
     .card.is-keyboard-hover,
     .barrier.is-keyboard-hover,
     .hazard.is-keyboard-hover,
@@ -334,6 +330,14 @@
     .hazard.is-selected,
     .top-event.is-selected {
       box-shadow: 0 0 2px 4px var(--interaction-shadow);
+    }
+
+    .card.is-selected.is-keyboard-hover,
+    .barrier.is-selected.is-keyboard-hover,
+    .barrier.is-multi-selected.is-keyboard-hover,
+    .hazard.is-selected.is-keyboard-hover,
+    .top-event.is-selected.is-keyboard-hover {
+      box-shadow: 0 0 2px 4px var(--interaction-shadow), 4px 4px 4px var(--interaction-shadow);
     }
 
     .hazard,
