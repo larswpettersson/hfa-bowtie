@@ -78,11 +78,15 @@
       flex-direction: column;
     }
 
-    .app-title {
-      margin: 0 0 16px;
-      font-size: 20px;
-      font-weight: 600;
-    }
+    .app-title { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .app-title .mark { width: 10px; height: 10px; border-radius: 2px; background: var(--color-brand-primary); }
+    /* Title bar (4.10) */
+    .titlebar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; margin: 0 0 16px; border: 1px solid var(--color-foreground-muted); border-radius: 8px; background: var(--color-background-elevated); }
+    /* Panel (4.13): a card with a 1 px border; the header row has the title first and the commands after it */
+    .panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; background: var(--color-background-elevated); border: 1px solid var(--color-foreground-muted); border-radius: 8px; padding: 12px 16px 16px; gap: 12px; }
+    .panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; }
+    .panel-head h2 { margin: 0 8px 0 0; font-size: 16px; font-weight: 600; }
+    .panel-body { display: flex; gap: 16px; flex: 1 1 auto; min-height: 0; }
 
     /* Matches Penpot "Bowtie Application": Toolbar sibling above Bowtie example;
        legend is anchored top-right in the bowtie grid (not a side column). */
@@ -95,39 +99,36 @@
       min-height: 0;
     }
 
-    .toolbar-wrap {
-      display: flex;
-      justify-content: center;
-    }
-
     .toolbar {
       display: flex;
       flex-direction: row;
       align-items: center;
       gap: 8px;
-      padding: 16px;
-      border-radius: 8px;
-      background: var(--color-background-sunken);
+      flex: 1;
       position: relative;
       z-index: 2;
     }
+    .toolbar .theme-btn { margin-left: auto; }
+    .toolbar .ai-toggle { margin-left: 0; }
 
     .action-btn {
       display: inline-flex;
       align-items: center;
       gap: 2px;
-      padding: 8px 10px;
+      min-height: 28px;
+      padding: 0 10px;
       font: inherit;
       font-size: 14px;
       color: var(--color-foreground);
       background: var(--color-background-base);
-      border: none;
+      border: 1px solid var(--color-foreground-muted);
       border-radius: 8px;
       cursor: pointer;
     }
 
     /* Penpot "Action Button" states: Hovered = drop-shadow, Pressed = inner-shadow, both black @ 20%. */
-    .action-btn:hover { box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.2); }
+    .action-btn:hover:not(:disabled) { box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.2); }
+    .action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
     .action-btn:active,
     .action-btn.is-flashed { box-shadow: inset 0 0 4px 4px rgba(0, 0, 0, 0.2); }
 
@@ -414,30 +415,23 @@
       text-align: center;
     }
 
+    /* The legend (4.12) is a column of its own beside the diagram, sunken with a border; it folds with ▾ and never rises on hover. */
     .legend {
-      grid-column: 3;
-      grid-row: 1;
-      justify-self: end;
-      align-self: start;
-      width: 174px;
-      margin-bottom: var(--gap-row);
-      padding: 7px 14px;
+      flex: 0 0 190px;
+      align-self: flex-start;
+      padding: 8px 12px;
+      border: 1px solid var(--color-foreground-muted);
       border-radius: 8px;
       background: var(--color-background-sunken);
       display: flex;
       flex-direction: column;
       gap: 4px;
-      position: relative;
-      z-index: 1;
-      pointer-events: auto;
-      transition: transform 150ms ease, box-shadow 150ms ease, z-index 150ms ease;
     }
-
-    .legend:hover {
-      z-index: 4;
-      transform: translateY(-6px);
-      box-shadow: 4px 4px 8px var(--interaction-shadow);
-    }
+    .legend-head { display: flex; align-items: center; gap: 4px; width: 100%; padding: 0; font: inherit; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--color-foreground-muted); background: none; border: 0; cursor: pointer; text-align: left; }
+    .legend-head .arrow::before { content: "▾"; font-size: 16px; line-height: 1; }
+    .legend.collapsed .legend-head .arrow::before { content: "▸"; }
+    .legend-rows { display: flex; flex-direction: column; gap: 4px; }
+    .legend.collapsed .legend-rows { display: none; }
 
     .legend-row {
       display: flex;
@@ -583,79 +577,34 @@
 </head>
 <body data-theme="light">
   <div class="app">
-    <h1 class="app-title">Bowtie Application</h1>
+    <header class="toolbar-wrap titlebar">
+      <h1 class="app-title"><span class="mark" aria-hidden="true"></span>HFA Bowtie</h1>
+      <div class="toolbar" role="toolbar" aria-label="Application commands">
+        <button type="button" class="action-btn" data-action="newDiagram" title="Replace the diagram with a small example that shows the whole structure">New</button>
+        <button type="button" class="action-btn" data-action="importState" title="Open a diagram (JSON file)">Open…</button>
+        <button type="button" class="action-btn" data-action="exportState" title="Save the diagram as a JSON file">Save</button>
+        <button type="button" class="action-btn" data-action="undo" disabled title="Undo (not available in Bowtie yet)">Undo</button>
+        <button type="button" class="action-btn" data-action="toggleHelp" data-shortcut="?" title="Visa genvägar och förkortningar (?)" aria-label="Visa genvägar och förkortningar" aria-haspopup="dialog">?</button>
+        <button type="button" class="action-btn theme-btn" data-action="toggleTheme" title="Toggle light/dark theme">Theme</button>
+        <input type="file" id="import-state-file" accept=".json,application/json" hidden />
+      </div>
+    </header>
 
     <div class="bowtie-application">
-      <div class="toolbar-wrap">
-        <div class="toolbar" role="toolbar" aria-label="Add bowtie elements">
-          <button type="button" class="action-btn" data-action="addCause" data-shortcut="c" title="Ca = Cause (orsak) — lägg till, genväg C" aria-label="Lägg till Cause">
-            <span>Add <span class="ul">C</span>a</span>
-          </button>
-          <button type="button" class="action-btn" data-action="addPreventiveBarrier" data-shortcut="b" title="PB = Preventive Barrier (förebyggande barriär) — lägg till, genväg B" aria-label="Lägg till Preventive Barrier">
-            <span>Add P<span class="ul">B</span></span>
-          </button>
-          <button type="button" class="action-btn" data-action="addReactiveBarrier" data-shortcut="r" title="RB = Reactive Barrier (reaktiv barriär) — lägg till, genväg R" aria-label="Lägg till Reactive Barrier">
-            <span>Add <span class="ul">R</span>B</span>
-          </button>
-          <button type="button" class="action-btn" data-action="addConsequence" data-shortcut="q" title="Cq = Consequence (konsekvens) — lägg till, genväg Q" aria-label="Lägg till Consequence">
-            <span>Add C<span class="ul">q</span></span>
-          </button>
-          <button type="button" class="action-btn" data-action="setTheme" data-theme-value="light" data-shortcut="l" title="Light mode (L)">
-            <span>Light</span>
-          </button>
-          <button type="button" class="action-btn" data-action="setTheme" data-theme-value="dark" data-shortcut="d" title="Dark mode (D)">
-            <span>Dark</span>
-          </button>
-          <button type="button" class="action-btn" data-action="newDiagram" title="Replace the diagram with a small example that shows the whole structure">
-            New
-          </button>
-          <button type="button" class="action-btn" data-action="importState" title="Open a diagram (JSON file)">
-            Open…
-          </button>
-          <button type="button" class="action-btn" data-action="exportState" title="Save the diagram as a JSON file">
-            Save
-          </button>
-          <button type="button" class="action-btn" data-action="toggleHelp" data-shortcut="?" title="Visa genvägar och förkortningar (?)" aria-label="Visa genvägar och förkortningar" aria-haspopup="dialog">
-            ?
-          </button>
-          <input type="file" id="import-state-file" accept=".json,application/json" hidden />
+      <section class="panel" id="bowtiePanel" aria-label="Bowtie Panel">
+        <div class="panel-head">
+          <h2>Bowtie</h2>
+          <button type="button" class="action-btn" aria-label="Add Cause" data-action="addCause" data-shortcut="c" aria-keyshortcuts="C" title="Add a cause"><span class="btn-label">Add <span class="ul">C</span>ause</span></button>
+          <button type="button" class="action-btn" aria-label="Add Preventive Barrier" data-action="addPreventiveBarrier" data-shortcut="b" aria-keyshortcuts="B" title="Add a preventive barrier"><span class="btn-label">Add Preventive <span class="ul">B</span>arrier</span></button>
+          <button type="button" class="action-btn" aria-label="Add Reactive Barrier" data-action="addReactiveBarrier" data-shortcut="r" aria-keyshortcuts="R" title="Add a reactive barrier"><span class="btn-label">Add <span class="ul">R</span>eactive Barrier</span></button>
+          <button type="button" class="action-btn" aria-label="Add Consequence" data-action="addConsequence" data-shortcut="q" aria-keyshortcuts="Q" title="Add a consequence"><span class="btn-label">Add Conse<span class="ul">q</span>uence</span></button>
         </div>
-      </div>
-
+        <div class="panel-body">
       <div class="bowtie-wrap">
         <div class="bowtie" id="bowtie" aria-label="Bowtie example">
           <div class="connectors-layer">
             <svg class="connectors-svg" aria-hidden="true"></svg>
           </div>
-          <aside class="legend" aria-label="Legend">
-              <div class="legend-row" data-status="Implemented" data-shortcut="i" title="Sätt status: Implemented (I) — kräver vald barriär">
-                <span class="swatch swatch--implemented"></span><span><span class="ul">I</span>mplemented</span>
-              </div>
-              <div class="legend-row" data-status="Partly Implemented" data-shortcut="p" title="Sätt status: Partly implemented (P) — kräver vald barriär">
-                <span class="swatch swatch--partly"></span><span><span class="ul">P</span>artly implemented</span>
-              </div>
-              <div class="legend-row" data-status="Not Implemented" data-shortcut="n" title="Sätt status: Not implemented (N) — kräver vald barriär">
-                <span class="swatch swatch--not-implemented"></span><span><span class="ul">N</span>ot implemented</span>
-              </div>
-              <div class="legend-row" data-status="To be implemented" data-shortcut="t" title="Sätt status: Temporary (T) — kräver vald barriär">
-                <span class="swatch swatch--temporary"></span><span><span class="ul">T</span>emporary</span>
-              </div>
-              <div class="legend-row" data-status="Unknown" data-shortcut="u" title="Sätt status: Unknown (U) — kräver vald barriär">
-                <span class="swatch swatch--unknown"></span><span><span class="ul">U</span>nknown</span>
-              </div>
-              <div class="legend-row legend-row--empty" aria-hidden="true">
-                <span class="swatch swatch--empty"></span>
-              </div>
-              <div class="legend-row" data-strength="Normal" data-shortcut="l" title="Sätt strength: Normal (L) — kräver vald barriär">
-                <span class="swatch swatch--normal"></span><span>Norma<span class="ul">l</span></span>
-              </div>
-              <div class="legend-row" data-strength="Strong" data-shortcut="s" title="Sätt strength: Strong (S) — kräver vald barriär">
-                <span class="swatch swatch--strong"></span><span><span class="ul">S</span>trong</span>
-              </div>
-              <div class="legend-row" data-strength="Weak" data-shortcut="w" title="Sätt strength: Weak (W) — kräver vald barriär">
-                <span class="swatch swatch--weak"></span><span><span class="ul">W</span>eak</span>
-              </div>
-          </aside>
           <section class="zone zone--left" id="zone-left" aria-label="Cause and Preventive Barriers">
             <article class="card" id="c-C1" data-kind="cause" data-row="1" data-col="1">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-C1" data-target="id-TE">C1</div>
@@ -795,6 +744,40 @@
           <p class="help-note">Verktygsfältets och legendens tangenter är inaktiva medan text redigeras. Öppna och stäng den här rutan med <strong>?</strong>; Esc stänger den också.</p>
         </dialog>
       </div>
+          <aside class="legend" id="legend" aria-label="Legend">
+            <button type="button" class="legend-head" id="legendToggle" aria-expanded="true" aria-controls="legendRows"><span class="arrow" aria-hidden="true"></span>Legend</button>
+            <div class="legend-rows" id="legendRows">
+              <div class="legend-row" data-status="Implemented" data-shortcut="i" title="Sätt status: Implemented (I) — kräver vald barriär">
+                <span class="swatch swatch--implemented"></span><span><span class="ul">I</span>mplemented</span>
+              </div>
+              <div class="legend-row" data-status="Partly Implemented" data-shortcut="p" title="Sätt status: Partly implemented (P) — kräver vald barriär">
+                <span class="swatch swatch--partly"></span><span><span class="ul">P</span>artly implemented</span>
+              </div>
+              <div class="legend-row" data-status="Not Implemented" data-shortcut="n" title="Sätt status: Not implemented (N) — kräver vald barriär">
+                <span class="swatch swatch--not-implemented"></span><span><span class="ul">N</span>ot implemented</span>
+              </div>
+              <div class="legend-row" data-status="To be implemented" data-shortcut="t" title="Sätt status: Temporary (T) — kräver vald barriär">
+                <span class="swatch swatch--temporary"></span><span><span class="ul">T</span>emporary</span>
+              </div>
+              <div class="legend-row" data-status="Unknown" data-shortcut="u" title="Sätt status: Unknown (U) — kräver vald barriär">
+                <span class="swatch swatch--unknown"></span><span><span class="ul">U</span>nknown</span>
+              </div>
+              <div class="legend-row legend-row--empty" aria-hidden="true">
+                <span class="swatch swatch--empty"></span>
+              </div>
+              <div class="legend-row" data-strength="Normal" data-shortcut="l" title="Sätt strength: Normal (L) — kräver vald barriär">
+                <span class="swatch swatch--normal"></span><span>Norma<span class="ul">l</span></span>
+              </div>
+              <div class="legend-row" data-strength="Strong" data-shortcut="s" title="Sätt strength: Strong (S) — kräver vald barriär">
+                <span class="swatch swatch--strong"></span><span><span class="ul">S</span>trong</span>
+              </div>
+              <div class="legend-row" data-strength="Weak" data-shortcut="w" title="Sätt strength: Weak (W) — kräver vald barriär">
+                <span class="swatch swatch--weak"></span><span><span class="ul">W</span>eak</span>
+              </div>
+                      </div>
+          </aside>
+        </div>
+      </section>
     </div>
   </div>
   <div class="status-message" id="statusMessage" role="status" aria-live="polite"></div>

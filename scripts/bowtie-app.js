@@ -2312,6 +2312,7 @@
     addReactiveBarrier,
     addConsequence,
     setTheme: (btn) => setTheme(btn.dataset.themeValue),
+    toggleTheme: () => setTheme(document.body.dataset.theme === "dark" ? "light" : "dark"),
     exportState: exportStateToFile,
     importState: () => openFile(),
     newDiagram: () => newDiagram(),
@@ -2332,6 +2333,20 @@
       actions.closeHelp();
     }
   });
+
+  /* The legend folds with ▾ on its header row; the choice is remembered (design principle 4.12). */
+  (function legendFold() {
+    const legend = document.getElementById("legend"), head = document.getElementById("legendToggle");
+    if (!legend || !head) return;
+    const KEY = "hfa-bowtie:legend-collapsed";
+    const apply = (collapsed) => { legend.classList.toggle("collapsed", collapsed); head.setAttribute("aria-expanded", String(!collapsed)); };
+    try { apply(localStorage.getItem(KEY) === "1"); } catch (_) { apply(false); }
+    head.addEventListener("click", () => {
+      const collapsed = !legend.classList.contains("collapsed");
+      apply(collapsed);
+      try { localStorage.setItem(KEY, collapsed ? "1" : "0"); } catch (_) { /* private window */ }
+    });
+  })();
 
   function flashButton(btn) {
     btn.classList.add("is-flashed");
@@ -2713,6 +2728,7 @@
   document.addEventListener("keydown", (evt) => {
     if (evt.code !== "Space" && evt.key !== " ") return;
     if (document.activeElement && document.activeElement.isContentEditable) return;
+    if (document.activeElement && document.activeElement.closest("button, a, input, textarea, select")) return; // Space activates a focused button
     evt.preventDefault();
     if (!evt.repeat) setSpacePanArmed(true);
   });
