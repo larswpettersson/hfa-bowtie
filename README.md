@@ -45,7 +45,7 @@ The editor also runs fully offline. [`Bowtie_offline.html`](https://larswpetters
   - `A` - AI analysis panel
 - **Inline Editing**: Click any node to edit text inline
 - **Barrier Mapping**: Select barriers and click causes/consequences to reassign coverage
-- **Several barriers**: Shift+click barriers to select several (as in the STPA workbench) and move them together with ← / →; Esc clears the selection
+- **Several barriers**: Shift+click barriers to select several (as in the STPA workbench) and move them together with Alt/Option + ← / →; Esc clears the selection
 - **No overlaps**: barriers in one column never cover the same row. A barrier that would collide (after a move, a new link or a moved card) gets a column of its own right after; empty columns are dropped
 - **Responsive**: Works on desktop and mobile browsers
 
