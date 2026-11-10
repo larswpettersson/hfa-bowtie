@@ -7,7 +7,7 @@
   <!--
     State-driven refactor of prototype4 — in-memory model + render-from-state.
     App logic: scripts/bowtie-app.js
-    Typography: Source Sans 3 system stack (update Penpot roboto-base token accordingly).
+    Typography: Open Sans (token font.family.base).
     Rebuilt from the Penpot "Bowtie Application" board plus the standalone
     Hazard node from the connector board (above Top Event, straight connector).
 
@@ -27,8 +27,7 @@
       --color-foreground: #0d1117;
       --color-foreground-muted: #57606a;
       --color-foreground-subtle: #8b949e;
-      --font-sans: "Source Sans 3", "Source Sans Pro", system-ui,
-                   -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-sans: "Open Sans", Arial, sans-serif; /* font.family.base */
       --gap-row: 16px;
       --gap-col: 16px;
       --barrier-width: 78px;
@@ -78,11 +77,15 @@
       flex-direction: column;
     }
 
-    .app-title {
-      margin: 0 0 16px;
-      font-size: 20px;
-      font-weight: 600;
-    }
+    .app-title { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .app-title .mark { width: 10px; height: 10px; border-radius: 2px; background: var(--color-brand-primary); }
+    /* Title bar (4.10) */
+    .titlebar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; margin: 0 0 16px; border: 1px solid var(--color-foreground-muted); border-radius: 8px; background: var(--color-background-elevated); }
+    /* Panel (4.13): a card with a 1 px border; the header row has the title first and the commands after it */
+    .panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; background: var(--color-background-elevated); border: 1px solid var(--color-foreground-muted); border-radius: 8px; padding: 12px 16px 16px; gap: 12px; }
+    .panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; }
+    .panel-head h2 { margin: 0 8px 0 0; font-size: 16px; font-weight: 600; }
+    .panel-body { display: flex; gap: 16px; flex: 1 1 auto; min-height: 0; }
 
     /* Matches Penpot "Bowtie Application": Toolbar sibling above Bowtie example;
        legend is anchored top-right in the bowtie grid (not a side column). */
@@ -95,39 +98,36 @@
       min-height: 0;
     }
 
-    .toolbar-wrap {
-      display: flex;
-      justify-content: center;
-    }
-
     .toolbar {
       display: flex;
       flex-direction: row;
       align-items: center;
       gap: 8px;
-      padding: 16px;
-      border-radius: 8px;
-      background: var(--color-background-sunken);
+      flex: 1;
       position: relative;
       z-index: 2;
     }
+    .toolbar .theme-btn { margin-left: auto; }
+    .toolbar .ai-toggle { margin-left: 0; }
 
     .action-btn {
       display: inline-flex;
       align-items: center;
       gap: 2px;
-      padding: 8px 10px;
+      min-height: 28px;
+      padding: 0 10px;
       font: inherit;
       font-size: 14px;
       color: var(--color-foreground);
       background: var(--color-background-base);
-      border: none;
+      border: 1px solid var(--color-foreground-muted);
       border-radius: 8px;
       cursor: pointer;
     }
 
     /* Penpot "Action Button" states: Hovered = drop-shadow, Pressed = inner-shadow, both black @ 20%. */
-    .action-btn:hover { box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.2); }
+    .action-btn:hover:not(:disabled) { box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.2); }
+    .action-btn:disabled { opacity: 0.45; cursor: not-allowed; }
     .action-btn:active,
     .action-btn.is-flashed { box-shadow: inset 0 0 4px 4px rgba(0, 0, 0, 0.2); }
 
@@ -414,30 +414,23 @@
       text-align: center;
     }
 
+    /* The legend (4.12) is a column of its own beside the diagram, sunken with a border; it folds with ▾ and never rises on hover. */
     .legend {
-      grid-column: 3;
-      grid-row: 1;
-      justify-self: end;
-      align-self: start;
-      width: 174px;
-      margin-bottom: var(--gap-row);
-      padding: 7px 14px;
+      flex: 0 0 190px;
+      align-self: flex-start;
+      padding: 8px 12px;
+      border: 1px solid var(--color-foreground-muted);
       border-radius: 8px;
       background: var(--color-background-sunken);
       display: flex;
       flex-direction: column;
       gap: 4px;
-      position: relative;
-      z-index: 1;
-      pointer-events: auto;
-      transition: transform 150ms ease, box-shadow 150ms ease, z-index 150ms ease;
     }
-
-    .legend:hover {
-      z-index: 4;
-      transform: translateY(-6px);
-      box-shadow: 4px 4px 8px var(--interaction-shadow);
-    }
+    .legend-head { display: flex; align-items: center; gap: 4px; width: 100%; padding: 0; font: inherit; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--color-foreground-muted); background: none; border: 0; cursor: pointer; text-align: left; }
+    .legend-head .arrow::before { content: "▾"; font-size: 16px; line-height: 1; }
+    .legend.collapsed .legend-head .arrow::before { content: "▸"; }
+    .legend-rows { display: flex; flex-direction: column; gap: 4px; }
+    .legend.collapsed .legend-rows { display: none; }
 
     .legend-row {
       display: flex;
@@ -583,79 +576,34 @@
 </head>
 <body data-theme="light">
   <div class="app">
-    <h1 class="app-title">Bowtie Application</h1>
+    <header class="toolbar-wrap titlebar">
+      <h1 class="app-title"><span class="mark" aria-hidden="true"></span>HFA Bowtie</h1>
+      <div class="toolbar" role="toolbar" aria-label="Application commands">
+        <button type="button" class="action-btn" data-action="newDiagram" title="Replace the diagram with a small example that shows the whole structure">New</button>
+        <button type="button" class="action-btn" data-action="importState" title="Open a diagram (JSON file)">Open…</button>
+        <button type="button" class="action-btn" data-action="exportState" title="Save the diagram as a JSON file">Save</button>
+        <button type="button" class="action-btn" data-action="undo" disabled title="Undo (not available in Bowtie yet)">Undo</button>
+        <button type="button" class="action-btn" data-action="toggleHelp" data-shortcut="?" title="Visa genvägar och förkortningar (?)" aria-label="Visa genvägar och förkortningar" aria-haspopup="dialog">?</button>
+        <button type="button" class="action-btn theme-btn" data-action="toggleTheme" title="Toggle light/dark theme">Theme</button>
+        <input type="file" id="import-state-file" accept=".json,application/json" hidden />
+      </div>
+    </header>
 
     <div class="bowtie-application">
-      <div class="toolbar-wrap">
-        <div class="toolbar" role="toolbar" aria-label="Add bowtie elements">
-          <button type="button" class="action-btn" data-action="addCause" data-shortcut="c" title="Ca = Cause (orsak) — lägg till, genväg C" aria-label="Lägg till Cause">
-            <span>Add <span class="ul">C</span>a</span>
-          </button>
-          <button type="button" class="action-btn" data-action="addPreventiveBarrier" data-shortcut="b" title="PB = Preventive Barrier (förebyggande barriär) — lägg till, genväg B" aria-label="Lägg till Preventive Barrier">
-            <span>Add P<span class="ul">B</span></span>
-          </button>
-          <button type="button" class="action-btn" data-action="addReactiveBarrier" data-shortcut="r" title="RB = Reactive Barrier (reaktiv barriär) — lägg till, genväg R" aria-label="Lägg till Reactive Barrier">
-            <span>Add <span class="ul">R</span>B</span>
-          </button>
-          <button type="button" class="action-btn" data-action="addConsequence" data-shortcut="q" title="Cq = Consequence (konsekvens) — lägg till, genväg Q" aria-label="Lägg till Consequence">
-            <span>Add C<span class="ul">q</span></span>
-          </button>
-          <button type="button" class="action-btn" data-action="setTheme" data-theme-value="light" data-shortcut="l" title="Light mode (L)">
-            <span>Light</span>
-          </button>
-          <button type="button" class="action-btn" data-action="setTheme" data-theme-value="dark" data-shortcut="d" title="Dark mode (D)">
-            <span>Dark</span>
-          </button>
-          <button type="button" class="action-btn" data-action="newDiagram" title="Replace the diagram with a small example that shows the whole structure">
-            New
-          </button>
-          <button type="button" class="action-btn" data-action="importState" title="Open a diagram (JSON file)">
-            Open…
-          </button>
-          <button type="button" class="action-btn" data-action="exportState" title="Save the diagram as a JSON file">
-            Save
-          </button>
-          <button type="button" class="action-btn" data-action="toggleHelp" data-shortcut="?" title="Visa genvägar och förkortningar (?)" aria-label="Visa genvägar och förkortningar" aria-haspopup="dialog">
-            ?
-          </button>
-          <input type="file" id="import-state-file" accept=".json,application/json" hidden />
+      <section class="panel" id="bowtiePanel" aria-label="Bowtie Panel">
+        <div class="panel-head">
+          <h2>Bowtie</h2>
+          <button type="button" class="action-btn" aria-label="Add Cause" data-action="addCause" data-shortcut="c" aria-keyshortcuts="C" title="Add a cause"><span class="btn-label">Add <span class="ul">C</span>ause</span></button>
+          <button type="button" class="action-btn" aria-label="Add Preventive Barrier" data-action="addPreventiveBarrier" data-shortcut="b" aria-keyshortcuts="B" title="Add a preventive barrier"><span class="btn-label">Add Preventive <span class="ul">B</span>arrier</span></button>
+          <button type="button" class="action-btn" aria-label="Add Reactive Barrier" data-action="addReactiveBarrier" data-shortcut="r" aria-keyshortcuts="R" title="Add a reactive barrier"><span class="btn-label">Add <span class="ul">R</span>eactive Barrier</span></button>
+          <button type="button" class="action-btn" aria-label="Add Consequence" data-action="addConsequence" data-shortcut="q" aria-keyshortcuts="Q" title="Add a consequence"><span class="btn-label">Add Conse<span class="ul">q</span>uence</span></button>
         </div>
-      </div>
-
+        <div class="panel-body">
       <div class="bowtie-wrap">
         <div class="bowtie" id="bowtie" aria-label="Bowtie example">
           <div class="connectors-layer">
             <svg class="connectors-svg" aria-hidden="true"></svg>
           </div>
-          <aside class="legend" aria-label="Legend">
-              <div class="legend-row" data-status="Implemented" data-shortcut="i" title="Sätt status: Implemented (I) — kräver vald barriär">
-                <span class="swatch swatch--implemented"></span><span><span class="ul">I</span>mplemented</span>
-              </div>
-              <div class="legend-row" data-status="Partly Implemented" data-shortcut="p" title="Sätt status: Partly implemented (P) — kräver vald barriär">
-                <span class="swatch swatch--partly"></span><span><span class="ul">P</span>artly implemented</span>
-              </div>
-              <div class="legend-row" data-status="Not Implemented" data-shortcut="n" title="Sätt status: Not implemented (N) — kräver vald barriär">
-                <span class="swatch swatch--not-implemented"></span><span><span class="ul">N</span>ot implemented</span>
-              </div>
-              <div class="legend-row" data-status="To be implemented" data-shortcut="t" title="Sätt status: Temporary (T) — kräver vald barriär">
-                <span class="swatch swatch--temporary"></span><span><span class="ul">T</span>emporary</span>
-              </div>
-              <div class="legend-row" data-status="Unknown" data-shortcut="u" title="Sätt status: Unknown (U) — kräver vald barriär">
-                <span class="swatch swatch--unknown"></span><span><span class="ul">U</span>nknown</span>
-              </div>
-              <div class="legend-row legend-row--empty" aria-hidden="true">
-                <span class="swatch swatch--empty"></span>
-              </div>
-              <div class="legend-row" data-strength="Normal" data-shortcut="l" title="Sätt strength: Normal (L) — kräver vald barriär">
-                <span class="swatch swatch--normal"></span><span>Norma<span class="ul">l</span></span>
-              </div>
-              <div class="legend-row" data-strength="Strong" data-shortcut="s" title="Sätt strength: Strong (S) — kräver vald barriär">
-                <span class="swatch swatch--strong"></span><span><span class="ul">S</span>trong</span>
-              </div>
-              <div class="legend-row" data-strength="Weak" data-shortcut="w" title="Sätt strength: Weak (W) — kräver vald barriär">
-                <span class="swatch swatch--weak"></span><span><span class="ul">W</span>eak</span>
-              </div>
-          </aside>
           <section class="zone zone--left" id="zone-left" aria-label="Cause and Preventive Barriers">
             <article class="card" id="c-C1" data-kind="cause" data-row="1" data-col="1">
               <div class="id-tag" contenteditable="true" data-role="id" id="id-C1" data-target="id-TE">C1</div>
@@ -795,6 +743,40 @@
           <p class="help-note">Verktygsfältets och legendens tangenter är inaktiva medan text redigeras. Öppna och stäng den här rutan med <strong>?</strong>; Esc stänger den också.</p>
         </dialog>
       </div>
+          <aside class="legend" id="legend" aria-label="Legend">
+            <button type="button" class="legend-head" id="legendToggle" aria-expanded="true" aria-controls="legendRows"><span class="arrow" aria-hidden="true"></span>Legend</button>
+            <div class="legend-rows" id="legendRows">
+              <div class="legend-row" data-status="Implemented" data-shortcut="i" title="Sätt status: Implemented (I) — kräver vald barriär">
+                <span class="swatch swatch--implemented"></span><span><span class="ul">I</span>mplemented</span>
+              </div>
+              <div class="legend-row" data-status="Partly Implemented" data-shortcut="p" title="Sätt status: Partly implemented (P) — kräver vald barriär">
+                <span class="swatch swatch--partly"></span><span><span class="ul">P</span>artly implemented</span>
+              </div>
+              <div class="legend-row" data-status="Not Implemented" data-shortcut="n" title="Sätt status: Not implemented (N) — kräver vald barriär">
+                <span class="swatch swatch--not-implemented"></span><span><span class="ul">N</span>ot implemented</span>
+              </div>
+              <div class="legend-row" data-status="To be implemented" data-shortcut="t" title="Sätt status: Temporary (T) — kräver vald barriär">
+                <span class="swatch swatch--temporary"></span><span><span class="ul">T</span>emporary</span>
+              </div>
+              <div class="legend-row" data-status="Unknown" data-shortcut="u" title="Sätt status: Unknown (U) — kräver vald barriär">
+                <span class="swatch swatch--unknown"></span><span><span class="ul">U</span>nknown</span>
+              </div>
+              <div class="legend-row legend-row--empty" aria-hidden="true">
+                <span class="swatch swatch--empty"></span>
+              </div>
+              <div class="legend-row" data-strength="Normal" data-shortcut="l" title="Sätt strength: Normal (L) — kräver vald barriär">
+                <span class="swatch swatch--normal"></span><span>Norma<span class="ul">l</span></span>
+              </div>
+              <div class="legend-row" data-strength="Strong" data-shortcut="s" title="Sätt strength: Strong (S) — kräver vald barriär">
+                <span class="swatch swatch--strong"></span><span><span class="ul">S</span>trong</span>
+              </div>
+              <div class="legend-row" data-strength="Weak" data-shortcut="w" title="Sätt strength: Weak (W) — kräver vald barriär">
+                <span class="swatch swatch--weak"></span><span><span class="ul">W</span>eak</span>
+              </div>
+                      </div>
+          </aside>
+        </div>
+      </section>
     </div>
   </div>
   <div class="status-message" id="statusMessage" role="status" aria-live="polite"></div>
@@ -3113,6 +3095,7 @@
     addReactiveBarrier,
     addConsequence,
     setTheme: (btn) => setTheme(btn.dataset.themeValue),
+    toggleTheme: () => setTheme(document.body.dataset.theme === "dark" ? "light" : "dark"),
     exportState: exportStateToFile,
     importState: () => openFile(),
     newDiagram: () => newDiagram(),
@@ -3133,6 +3116,20 @@
       actions.closeHelp();
     }
   });
+
+  /* The legend folds with ▾ on its header row; the choice is remembered (design principle 4.12). */
+  (function legendFold() {
+    const legend = document.getElementById("legend"), head = document.getElementById("legendToggle");
+    if (!legend || !head) return;
+    const KEY = "hfa-bowtie:legend-collapsed";
+    const apply = (collapsed) => { legend.classList.toggle("collapsed", collapsed); head.setAttribute("aria-expanded", String(!collapsed)); };
+    try { apply(localStorage.getItem(KEY) === "1"); } catch (_) { apply(false); }
+    head.addEventListener("click", () => {
+      const collapsed = !legend.classList.contains("collapsed");
+      apply(collapsed);
+      try { localStorage.setItem(KEY, collapsed ? "1" : "0"); } catch (_) { /* private window */ }
+    });
+  })();
 
   function flashButton(btn) {
     btn.classList.add("is-flashed");
@@ -3514,6 +3511,7 @@
   document.addEventListener("keydown", (evt) => {
     if (evt.code !== "Space" && evt.key !== " ") return;
     if (document.activeElement && document.activeElement.isContentEditable) return;
+    if (document.activeElement && document.activeElement.closest("button, a, input, textarea, select")) return; // Space activates a focused button
     evt.preventDefault();
     if (!evt.repeat) setSpacePanArmed(true);
   });
@@ -3798,6 +3796,10 @@
     throw new Error("Unknown provider: " + provider);
   }
 
+  /** A message in the OpenAI shape; an attached image becomes an image_url part with a data URL. */
+  const openAiMessage = (m) => !m.image ? { role: m.role, content: m.content }
+    : { role: m.role, content: [{ type: "text", text: m.content }, { type: "image_url", image_url: { url: `data:${m.image.mime};base64,${m.image.data}` } }] };
+
   async function callLLM({ provider, systemPrompt, messages, signal, onProgress }) {
     const cfg = settings;
 
@@ -3813,7 +3815,8 @@
         stream: true, // long answers (a whole revised analysis) outlast a non-streaming request
         cache_control: { type: "ephemeral" }, // the system prompt + analysis repeat on every question
         system: systemPrompt,
-        messages,
+        messages: messages.map((m) => !m.image ? { role: m.role, content: m.content }
+          : { role: m.role, content: [{ type: "image", source: { type: "base64", media_type: m.image.mime, data: m.image.data } }, { type: "text", text: m.content }] }),
       };
       if (!info || info.effort) {
         const effort = cfg.claude_effort || "medium";
@@ -3841,7 +3844,8 @@
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       const body = {
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+        contents: messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user",
+          parts: [...(m.image ? [{ inlineData: { mimeType: m.image.mime, data: m.image.data } }] : []), { text: m.content }] })),
       };
       const data = await readJson(await fetch(url, {
         method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": cfg.gemini_key }, body: JSON.stringify(body), signal,
@@ -3857,7 +3861,7 @@
       const res = await fetch(HF_ROUTER + "/chat/completions", {
         method: "POST", signal,
         headers: { "content-type": "application/json", authorization: "Bearer " + cfg.hf_key },
-        body: JSON.stringify({ model: cfg.hf_model || DEFAULTS.hf_model, messages: [{ role: "system", content: systemPrompt }, ...messages] }),
+        body: JSON.stringify({ model: cfg.hf_model || DEFAULTS.hf_model, messages: [{ role: "system", content: systemPrompt }, ...messages.map(openAiMessage)] }),
       });
       if (res.status === 402) throw new Error("HTTP 402: the monthly Inference Providers credits of this Hugging Face account are used up (huggingface.co/settings/billing).");
       const data = await readJson(res);
@@ -3876,12 +3880,14 @@
 
       if (/\/api\/generate\/?$/.test(endpoint)) { // Ollama native, single prompt
         const prompt = messages.map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`).join("\n\n") + "\n\nAssistant:";
-        const data = await post({ model, system: systemPrompt, prompt, stream: false });
+        const images = messages.filter((m) => m.image).map((m) => m.image.data);
+        const data = await post({ model, system: systemPrompt, prompt, stream: false, ...(images.length ? { images } : {}) });
         return { text: data.response ?? JSON.stringify(data), raw: data };
       }
-      const chat = [{ role: "system", content: systemPrompt }, ...messages];
+      const chat = [{ role: "system", content: systemPrompt }, ...messages.map(openAiMessage)];
       if (/\/api\/chat\/?$/.test(endpoint)) { // Ollama native chat
-        const data = await post({ model, messages: chat, stream: false });
+        const native = [{ role: "system", content: systemPrompt }, ...messages.map((m) => ({ role: m.role, content: m.content, ...(m.image ? { images: [m.image.data] } : {}) }))];
+        const data = await post({ model, messages: native, stream: false });
         return { text: data.message?.content ?? JSON.stringify(data), raw: data };
       }
       const data = await post({ model, messages: chat }); // OpenAI-compatible
@@ -4005,6 +4011,11 @@
   .ai-status { font-size: 12px; color: var(--color-foreground-muted); padding: 0 10px 4px; min-height: 18px; }
   .ai-chat { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--color-foreground-subtle); }
   .ai-chat textarea { resize: vertical; min-height: 54px; max-height: 220px; width: 100%; }
+  .ai-attach { display: flex; align-items: center; gap: 8px; font-size: 12px; border: 1px solid var(--color-foreground-subtle); border-radius: 8px; padding: 4px 6px; }
+  .ai-attach[hidden] { display: none; }
+  .ai-attach img { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; flex: none; }
+  .ai-attach .note { flex: 1; min-width: 0; color: var(--color-foreground-muted); }
+  .ai-chat.dropping textarea { outline: 2px dashed var(--color-brand-primary); }
   .ai-chat .row { display: flex; gap: 6px; align-items: center; }
   .ai-chat select { flex: 1; min-width: 0; }
   .ai-settings { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 16px 18px; color: var(--color-foreground);
@@ -4080,7 +4091,12 @@
     $.prompt = el("textarea", { placeholder: `Ask about ${cfg.subject || "the analysis"}… (Enter sends, Shift+Enter for a new line)`, ariaLabel: "Question" });
     $.modelPick = el("select", { title: "Model for the next question", ariaLabel: "Model for the next question" });
     $.send = btn("Send", { type: "submit", className: "primary" });
-    $.chat = el("form", { className: "ai-chat" }, $.prompt, el("div", { className: "row" }, $.modelPick, $.send));
+    // An image for the next question: a thumbnail with ✕. It is sent with that question only and never stored.
+    $.thumb = el("img", { alt: "Attached image" });
+    $.attachNote = el("span", { className: "note" });
+    $.attachRemove = btn("✕", { title: "Remove the image", ariaLabel: "Remove the image" });
+    $.attach = el("div", { className: "ai-attach", hidden: true }, $.thumb, $.attachNote, $.attachRemove);
+    $.chat = el("form", { className: "ai-chat" }, $.attach, $.prompt, el("div", { className: "row" }, $.modelPick, $.send));
     $.panel.append($.resize, head, $.quick, scope, logWrap, $.status, $.chat);
     document.body.appendChild($.panel);
 
@@ -4328,12 +4344,58 @@
       return `Analysis scope: I selected ${s.label}. Focus on the selected elements and their direct relations. Use the rest of the analysis only as context, and keep any change to a patch.\nSelected elements (JSON):\n${JSON.stringify(s.items, null, 2)}\n\nQuestion:\n`;
     }
 
+    /* ── Image attachment ── */
+    const VISION_LOCAL = /llava|vision|(^|[-:_/])vl|gemma-?3|minicpm|pixtral|moondream|bakllava|qwen.*vl/i;
+    const acceptsImages = () => {
+      const model = providerLabel() || "";
+      if (settings.provider === "local") return VISION_LOCAL.test(model);
+      if (settings.provider === "hf") return !/coder|embed|whisper|guard/i.test(model);
+      return true;
+    };
+    let attachment = null; // { mime, data (base64), url (for the thumbnail) }
+    function updateAttach() {
+      $.attach.hidden = !attachment;
+      if (!attachment) return;
+      $.thumb.src = attachment.url;
+      $.attachNote.textContent = settings.provider === "local"
+        ? "Sent to your local model with the next question only. Not saved."
+        : `Sent to ${providerName()} with the next question only. Not saved in the analysis or the export.`;
+    }
+    /** Read an image file; a large one is scaled down (longest side 1568 px) so the request stays small. */
+    async function takeImage(file) {
+      if (!file || !/^image\/(png|jpeg|gif|webp)$/.test(file.type)) { setStatus("Only PNG, JPEG, GIF and WebP images can be attached."); return; }
+      if (!acceptsImages()) { setStatus(`${providerLabel()} does not accept images. Choose a model with image support.`); return; }
+      const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+      let out = url, mime = file.type;
+      try {
+        const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+        const k = Math.min(1, 1568 / Math.max(img.naturalWidth, img.naturalHeight));
+        if (k < 1) {
+          const c = document.createElement("canvas");
+          c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+          c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+          mime = "image/jpeg"; out = c.toDataURL(mime, 0.85);
+        }
+      } catch (_) { /* keep the original */ }
+      attachment = { mime, data: out.slice(out.indexOf(",") + 1), url: out };
+      setStatus("");
+      updateAttach();
+    }
+    const imageOf = (dt) => [...(dt?.files || [])].find((f) => f.type.startsWith("image/")) || null;
+    $.prompt.addEventListener("paste", (e) => { const f = imageOf(e.clipboardData); if (f) { e.preventDefault(); takeImage(f); } });
+    $.chat.addEventListener("dragover", (e) => { if ([...(e.dataTransfer?.items || [])].some((i) => i.kind === "file")) { e.preventDefault(); $.chat.classList.add("dropping"); } });
+    $.chat.addEventListener("dragleave", () => $.chat.classList.remove("dropping"));
+    $.chat.addEventListener("drop", (e) => { $.chat.classList.remove("dropping"); const f = imageOf(e.dataTransfer); if (f || e.dataTransfer?.files?.length) { e.preventDefault(); takeImage(f || e.dataTransfer.files[0]); } });
+    $.attachRemove.addEventListener("click", () => { attachment = null; updateAttach(); $.prompt.focus(); });
+
     async function send(userText) {
       if (busy || !userText.trim()) return;
       const s = currentScope();
-      addMessage("user", userText, `Scope: ${s ? s.label : "whole analysis"}`);
+      const image = attachment ? { mime: attachment.mime, data: attachment.data } : null;
+      attachment = null; updateAttach(); // the image goes with this question only
+      addMessage("user", userText, `Scope: ${s ? s.label : "whole analysis"}${image ? " · with image" : ""}`);
       const prior = settings.keep_history ? history : [];
-      const turn = [{ role: "user", content: scopePreamble(s) + userText }];
+      const turn = [{ role: "user", content: scopePreamble(s) + userText, ...(image ? { image } : {}) }];
       busy = new AbortController();
       setBusy(true);
       const model = providerLabel();
@@ -4343,6 +4405,7 @@
         const { text, usage } = await callLLM({ provider: settings.provider, systemPrompt: buildSystemPrompt(), messages: [...prior, ...turn], signal: busy.signal,
           onProgress: (n) => setStatus(`Receiving from ${model}… ${n.toLocaleString()} characters`) });
         turn.push({ role: "assistant", content: text });
+        turn.forEach((m) => { delete m.image; }); // follow-up questions do not carry the image
         const tokens = usage ? ` · ${(usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0)} in / ${usage.output_tokens ?? "?"} out tokens` : "";
         addMessage("assistant", text, `${model} · ${((performance.now() - t0) / 1000).toFixed(1)} s${tokens}`);
         history.push(...turn);

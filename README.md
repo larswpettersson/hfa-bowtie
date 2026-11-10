@@ -94,7 +94,7 @@ Design tokens and shared components live in the Penpot **HFA DS** file (shared l
 Design tokens are defined in the [hfa-ds](https://github.com/larswpettersson/hfa-ds) repository and imported into Penpot files via MCP. This repo does not contain a local `tokens.json`.
 
 - **Colors**: Background (base/sunken/elevated), semantic (info/warning/success/error), brand (Trafikverket red)
-- **Typography:** Source Sans 3 via `roboto-base` token
+- **Typography:** Open Sans via the `font.family.base` token
 - **Border Styles**: Normal (1px), Strong (3px), Weak (dashed)
 - **Themes**: Light and dark modes with proper contrast ratios
 
