@@ -744,10 +744,14 @@
     }
 
     /* ── Image attachment ── */
-    const VISION_LOCAL = /llava|vision|(^|[-:_/])vl|gemma-?3|minicpm|pixtral|moondream|bakllava|qwen.*vl/i;
+    /* A local endpoint can be Ollama or LM Studio, but also a LiteLLM or other OpenAI-compatible proxy in front of any model.
+       The image is refused only for a model known to be text-only; an unknown name is let through, and the server's own
+       error is shown if it does not take images. */
+    const VISION_LOCAL = /llava|vision|(^|[-:_/])vl|gemma-?[3-9]|minicpm|pixtral|moondream|bakllava|qwen.*vl|llama-?4|mistral-small-?3\.[12]/i;
+    const TEXT_ONLY_LOCAL = /embed|coder|whisper|guard|(^|[/:])(llama-?[123]|codellama|tinyllama|mistral|mixtral|phi|qwen|deepseek|starcoder|gemma-?[12]?([-:_.]|$))/i;
     const acceptsImages = () => {
       const model = providerLabel() || "";
-      if (settings.provider === "local") return VISION_LOCAL.test(model);
+      if (settings.provider === "local") return VISION_LOCAL.test(model) || !TEXT_ONLY_LOCAL.test(model);
       if (settings.provider === "hf") return !/coder|embed|whisper|guard/i.test(model);
       return true;
     };
