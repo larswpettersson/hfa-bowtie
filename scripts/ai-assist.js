@@ -457,7 +457,10 @@
   .ai-noprovider { background: var(--color-background-warning, var(--ai-warn-bg)); color: var(--color-foreground); border: 1px solid var(--color-foreground);
     border-radius: 6px; padding: 12px; margin: 0; }
   .ai-panel.no-provider .ai-msg.welcome { display: none; }
-  @media (max-width: 760px) { body.ai-open .ai-content { margin-right: 0; } .ai-panel { left: 0; right: 0; width: auto; border-radius: 0; } .ai-resize { display: none; } }
+  /* On a narrow screen the panel cannot sit beside the content: it lies over it as the same card, with the same gutters,
+     corners and toggle place, and only as wide as the screen allows. */
+  @media (max-width: 760px) { body.ai-open .ai-content { margin-right: 0; }
+    .ai-panel { width: min(var(--ai-w, 440px), calc(100vw - var(--ai-right, 0px) - 16px)); } .ai-resize { display: none; } }
   @media print { .ai-panel, .ai-toggle { display: none !important; } body.ai-open .ai-content { margin-right: 0; } }
   `;
 
