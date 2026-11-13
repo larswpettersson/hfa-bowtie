@@ -15,8 +15,9 @@
       id: "hta",                       // localStorage prefix for the per-tool settings (system prompt, panel width)
       title: "HTA analysis",
       subject: "the analysis",         // "Ask about …" in the question field
-      toolbar: element,                // the "AI" toggle button is appended here
-      buttonClass: "action-btn",
+      content: element,                // the content area under the title bar: the panel starts at its top and the
+                                       // element shrinks while the panel is open (the host sets --ai-right and
+                                       // --ai-bottom on body to its own gutters)
       systemPrompt: "…",               // editable default system prompt
       schemaPrompt: "…" | () => "…",   // appended after the (editable) system prompt: data model + patch format;
                                        // a function is called for every question (e.g. built from the analysis)
@@ -350,46 +351,54 @@
     return out.join("");
   }
 
-  /* ── Styles (use the host's --color-* tokens from HFA DS; body[data-theme] switches them) ── */
+  /* ── Styles (use the host's --color-* tokens from HFA DS; body[data-theme] switches them) ──
+     The panel is a card under the title bar (Penpot: "Example AI-panel"): it starts at the top of the host's content
+     area (--ai-top, measured from cfg.content) and keeps the host's gutters (--ai-right, --ai-bottom, set by the host).
+     Buttons are Compact Button (4.10, 28 px); Compress, Expand, Clear and Export .md are Narrow (4.9). */
   const CSS = `
-  body.ai-open { margin-right: var(--ai-w, 440px); }
-  .ai-panel { position: fixed; top: 0; right: 0; bottom: 0; width: var(--ai-w, 440px); z-index: 50; display: flex; flex-direction: column;
-    background: var(--color-background-elevated); color: var(--color-foreground); border-left: 1px solid var(--color-foreground-subtle);
-    font: 14px/1.45 var(--font-sans, system-ui, sans-serif); box-shadow: -6px 0 18px rgba(0,0,0,.12); }
+  body.ai-open .ai-content { margin-right: calc(var(--ai-w, 440px) + var(--ai-gap, 16px)); }
+  .ai-panel { position: fixed; top: var(--ai-top, 0px); right: var(--ai-right, 0px); bottom: var(--ai-bottom, 0px); width: var(--ai-w, 440px); z-index: 50;
+    display: flex; flex-direction: column; background: var(--color-background-base); color: var(--color-foreground);
+    border: 1px solid var(--color-foreground-subtle); border-radius: 8px; font: 14px/1.45 var(--font-sans, system-ui, sans-serif); }
   .ai-panel[hidden] { display: none; }
   .ai-panel *, .ai-settings * { box-sizing: border-box; }
-  .ai-panel button, .ai-settings button { font: inherit; font-size: 13px; padding: 4px 10px; color: var(--color-foreground);
-    background: var(--color-background-base); border: 1px solid var(--color-foreground-subtle); border-radius: 6px; cursor: pointer; }
+  .ai-panel button, .ai-settings button { font: inherit; font-size: 14px; min-height: 28px; padding: 0 10px; color: var(--color-foreground);
+    background: var(--color-background-elevated); border: 1px solid var(--color-foreground-subtle); border-radius: 6px; cursor: pointer; }
   .ai-panel button:hover:not(:disabled), .ai-settings button:hover { border-color: var(--color-foreground); }
   .ai-panel button:disabled { opacity: .45; cursor: not-allowed; }
   .ai-panel button.primary { background: var(--color-brand-primary, #d70000); border-color: var(--color-brand-primary, #d70000); color: #fff; }
-  .ai-panel select, .ai-panel textarea, .ai-settings input, .ai-settings select, .ai-settings textarea { font: inherit; font-size: 13px;
-    color: var(--color-foreground); background: var(--color-background-base); border: 1px solid var(--color-foreground-subtle); border-radius: 6px; padding: 4px 6px; }
-  .ai-resize { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; }
+  .ai-panel button.narrow { font-size: 12px; line-height: 17px; min-height: 0; padding: 4px 8px; border-radius: 4px; border-color: var(--color-foreground-muted); }
+  .ai-panel select, .ai-panel textarea { font: inherit; font-size: 14px; color: var(--color-foreground); background: var(--color-background-sunken);
+    border: 1px solid var(--color-foreground-muted); border-radius: 6px; padding: 4px 10px; }
+  .ai-settings input, .ai-settings select, .ai-settings textarea { font: inherit; font-size: 13px; color: var(--color-foreground);
+    background: var(--color-background-base); border: 1px solid var(--color-foreground-subtle); border-radius: 6px; padding: 4px 6px; }
+  .ai-resize { position: absolute; left: -5px; top: 0; bottom: 0; width: 8px; cursor: col-resize; }
   .ai-resize:hover, .ai-resize:focus-visible { background: color-mix(in srgb, var(--color-foreground) 15%, transparent); outline: none; }
-  .ai-head { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--color-foreground-subtle); }
-  .ai-head strong { font-size: 15px; margin-right: auto; }
-  .ai-pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--color-foreground-subtle); color: var(--color-foreground-muted); }
-  .ai-quick { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px solid var(--color-foreground-subtle); }
-  .ai-quick button { font-size: 12px; padding: 3px 8px; }
-  .ai-scope { font-size: 12px; color: var(--color-foreground-muted); padding: 6px 10px; border-bottom: 1px solid var(--color-foreground-subtle);
-    display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-  .ai-scope strong { color: var(--color-foreground); font-weight: 600; }
-  .ai-scope label { display: inline-flex; gap: 4px; align-items: center; }
-  .ai-scope .folds { display: inline-flex; gap: 6px; margin-left: auto; }
-  .ai-scope .folds button { padding: 2px 8px; font-size: 12px; }
+  .ai-head { display: flex; gap: 8px; align-items: center; min-height: 48px; padding: 10px 12px; border-bottom: 1px solid var(--color-foreground-subtle); }
+  .ai-head strong { font-size: 16px; font-weight: 700; margin-right: auto; }
+  .ai-pill { font-size: 12px; line-height: 17px; padding: 2px 8px; border-radius: 999px; background: var(--color-background-elevated);
+    border: 1px solid var(--color-foreground-muted); color: var(--color-foreground); white-space: nowrap; }
+  .ai-quick { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--color-foreground-subtle); }
+  .ai-quick:empty { display: none; }
+  .ai-scope { font-size: 12px; color: var(--color-foreground-muted); padding: 8px 12px; border-bottom: 1px solid var(--color-foreground-subtle);
+    display: flex; flex-direction: column; gap: 8px; }
+  .ai-scope .line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .ai-scope b { color: var(--color-foreground); font-weight: 700; }
+  .ai-scope strong { font-weight: 400; }
+  .ai-scope label { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; white-space: nowrap; }
+  .ai-scope input[type=checkbox] { width: 14px; height: 14px; margin: 0; accent-color: var(--color-foreground); }
+  .ai-scope .folds { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
   .ai-logwrap { position: relative; flex: 1; min-height: 120px; display: flex; flex-direction: column; }
-  .ai-log { flex: 1; min-height: 0; overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+  .ai-log { flex: 1; min-height: 0; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
   .ai-log > * { flex: none; }
   .ai-tobottom { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); width: 32px; height: 32px; padding: 0 !important;
     border-radius: 50% !important; box-shadow: 0 2px 8px rgba(0,0,0,.2); font-size: 16px; line-height: 1; }
   .ai-tobottom[hidden] { display: none; }
-  .ai-msg { border: 1px solid var(--color-foreground-subtle); border-radius: 6px; padding: 8px 12px; max-width: 100%; overflow-x: auto; }
+  .ai-msg { border: 1px solid var(--color-foreground-muted); border-radius: 6px; padding: 12px; background: var(--color-background-elevated); max-width: 100%; overflow-x: auto; }
   .ai-msg.user { background: color-mix(in srgb, var(--color-brand-primary, #d70000) 10%, var(--color-background-elevated)); align-self: flex-end; max-width: 90%; white-space: pre-wrap; }
-  .ai-msg.assistant { background: var(--color-background-elevated); }
   .ai-msg.error { background: color-mix(in srgb, #c70039 14%, var(--color-background-elevated)); white-space: pre-wrap; }
   .ai-msg .meta { font-size: 11px; color: var(--color-foreground-subtle); margin-bottom: 4px; }
-  .ai-msg .meta .fold { border: 0; background: none; padding: 0 4px; margin-left: 2px; font-size: 11px; color: var(--color-foreground-muted); }
+  .ai-msg .meta .fold { border: 0; background: none; min-height: 0; padding: 0 4px; margin-left: 2px; font-size: 11px; color: var(--color-foreground-muted); }
   .ai-msg .gist { display: none; color: var(--color-foreground-muted); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ai-msg.folded .gist { display: block; }
   .ai-msg.folded > .body { display: none; }
@@ -402,21 +411,22 @@
   .ai-msg h3, .ai-msg h4, .ai-msg h5 { margin: 10px 0 4px; }
   .ai-msg p { margin: 6px 0; }
   .ai-msg ul, .ai-msg ol { margin: 4px 0; padding-left: 22px; }
+  .ai-msg > :first-child, .ai-msg .body > :first-child { margin-top: 0; }
+  .ai-msg .body > :last-child { margin-bottom: 0; }
   .ai-card { border: 1px solid var(--color-foreground-subtle); border-radius: 6px; background: var(--color-background-base); padding: 8px 12px; margin: 6px 0; }
-  .ai-card .head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .ai-card .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .ai-card .head strong { margin-right: auto; font-size: 13px; }
-  .ai-card .head button { padding: 3px 10px; font-size: 12px; }
   .ai-card summary { cursor: pointer; font-size: 12px; color: var(--color-foreground-muted); margin-top: 6px; }
-  .ai-status { font-size: 12px; color: var(--color-foreground-muted); padding: 0 10px 4px; min-height: 18px; }
-  .ai-chat { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--color-foreground-subtle); }
-  .ai-chat textarea { resize: vertical; min-height: 54px; max-height: 220px; width: 100%; }
-  .ai-attach { display: flex; align-items: center; gap: 8px; font-size: 12px; border: 1px solid var(--color-foreground-subtle); border-radius: 8px; padding: 4px 6px; }
+  .ai-status { font-size: 12px; color: var(--color-foreground-muted); padding: 0 12px 4px; min-height: 18px; }
+  .ai-chat { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-top: 1px solid var(--color-foreground-subtle); }
+  .ai-chat textarea { resize: vertical; min-height: 56px; max-height: 220px; width: 100%; padding: 8px 10px; }
+  .ai-attach { display: flex; align-items: center; gap: 8px; font-size: 12px; border: 1px solid var(--color-foreground-muted); border-radius: 6px; padding: 4px 6px; }
   .ai-attach[hidden] { display: none; }
   .ai-attach img { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; flex: none; }
   .ai-attach .note { flex: 1; min-width: 0; color: var(--color-foreground-muted); }
   .ai-chat.dropping textarea { outline: 2px dashed var(--color-brand-primary); }
-  .ai-chat .row { display: flex; gap: 6px; align-items: center; }
-  .ai-chat select { flex: 1; min-width: 0; }
+  .ai-chat .row { display: flex; gap: 8px; align-items: center; }
+  .ai-chat select { flex: 1; min-width: 0; min-height: 28px; padding: 0 10px; }
   .ai-settings { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); padding: 16px 18px; color: var(--color-foreground);
     background: var(--color-background-elevated); border: 1px solid var(--color-foreground-subtle); border-radius: 8px; font: 14px/1.45 var(--font-sans, system-ui, sans-serif); }
   .ai-settings::backdrop { background: rgba(0,0,0,.4); }
@@ -430,20 +440,25 @@
   .ai-settings textarea { min-height: 180px; width: 100%; font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; }
   .ai-settings .hint { font-size: 12px; color: var(--color-foreground-muted); margin: 4px 0; }
   .ai-settings .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-  /* The panel toggle is an icon button with only hover and pressed (pressed lasts while the mouse button is down); it has no status. */
-  .ai-toggle { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; line-height: 0; }
-  .ai-toggle svg { width: 24px; height: 18px; display: block; }
+  /* Panel Toggle: 36 × 28 with an icon of a window with a panel on the right. It has only hover and pressed (pressed lasts while the
+     mouse button is down) and no status. It is the last item in the panel header while the panel is open, and floats at the same
+     place on the screen, the top right of the content area, while the panel is hidden (design principle 4.7). */
+  .ai-toggle { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 28px; min-height: 28px; padding: 0; margin: 0;
+    line-height: 0; font: inherit; color: var(--color-foreground); background: var(--color-background-elevated);
+    border: 1px solid var(--color-foreground-muted); border-radius: 6px; cursor: pointer; flex: none; }
+  .ai-toggle svg { width: 16px; height: 12px; display: block; }
+  .ai-toggle:hover { border-color: var(--color-foreground); }
   .ai-toggle:active { background: var(--color-foreground); border-color: var(--color-foreground); color: var(--color-background-elevated); }
-  .ai-head .ai-toggle { margin-left: 0; }
+  .ai-toggle.floating { position: fixed; top: calc(var(--ai-top, 0px) + 11px); right: calc(var(--ai-right, 0px) + 13px); z-index: 8; }
   /* Without a provider: a warning pill and a box in the log. Status is shown with the fill only. */
   .ai-panel { --ai-warn-bg: #fad153; }
   body[data-theme="dark"] .ai-panel { --ai-warn-bg: #544a06; }
   .ai-pill.warning { background: var(--color-background-warning, var(--ai-warn-bg)); color: var(--color-foreground); border-color: var(--color-foreground); }
   .ai-noprovider { background: var(--color-background-warning, var(--ai-warn-bg)); color: var(--color-foreground); border: 1px solid var(--color-foreground);
-    border-radius: 6px; padding: 8px 12px; margin: 0 0 10px; }
+    border-radius: 6px; padding: 12px; margin: 0; }
   .ai-panel.no-provider .ai-msg.welcome { display: none; }
-  @media (max-width: 760px) { body.ai-open { margin-right: 0; } .ai-panel { width: 100vw; } .ai-resize { display: none; } }
-  @media print { .ai-panel, .ai-toggle { display: none !important; } body.ai-open { margin-right: 0; } }
+  @media (max-width: 760px) { body.ai-open .ai-content { margin-right: 0; } .ai-panel { left: 0; right: 0; width: auto; border-radius: 0; } .ai-resize { display: none; } }
+  @media print { .ai-panel, .ai-toggle { display: none !important; } body.ai-open .ai-content { margin-right: 0; } }
   `;
 
   /* ═══════════════════════════════════════════════════════════════════════
@@ -458,13 +473,12 @@
     /* ── Markup ── */
     const $ = {};
     const btn = (label, props = {}) => el("button", { type: "button", textContent: label, ...props });
-    // An icon button: a window with a panel on the right. It sits at the right end of the toolbar while the panel is hidden
-    // and in the panel's header while it is open, so it is in the same place on the screen (design principle 4.7).
-    $.toggle = btn("", { className: `${cfg.buttonClass || ""} ai-toggle` });
-    $.toggle.innerHTML = '<svg viewBox="0 0 24 18" aria-hidden="true" focusable="false"><rect x=".75" y=".75" width="22.5" height="16.5" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="15.75" y1="1.5" x2="15.75" y2="16.5" stroke="currentColor" stroke-width="1.5"/></svg>';
+    // An icon button: a window with a panel on the right (Panel Toggle in HFA DS). It is in the panel's header while the panel
+    // is open and floats at the same place on the screen while it is hidden (design principle 4.7); setOpen() places it.
+    $.toggle = btn("", { className: "ai-toggle" });
+    $.toggle.innerHTML = '<svg viewBox="0 0 16 12" aria-hidden="true" focusable="false"><rect x=".625" y=".625" width="14.75" height="10.75" rx="2" fill="none" stroke="currentColor" stroke-width="1.25"/><line x1="10.5" y1=".625" x2="10.5" y2="11.375" stroke="currentColor" stroke-width="1.25"/></svg>';
     $.toggle.setAttribute("aria-expanded", "true");
     $.toggle.setAttribute("aria-controls", "ai-panel");
-    cfg.toolbar?.appendChild($.toggle);
 
     $.panel = el("aside", { className: "ai-panel", id: "ai-panel", hidden: true, ariaLabel: cfg.title });
     $.resize = el("div", { className: "ai-resize", tabIndex: 0, title: "Drag to resize (arrow keys work too)" });
@@ -476,13 +490,15 @@
     $.quick = el("div", { className: "ai-quick" });
     $.scopeText = el("span");
     $.keep = el("input", { type: "checkbox" });
-    $.foldAll = btn("Compress", { title: "Fold every answer to one line" });
-    $.unfoldAll = btn("Expand", { title: "Open every answer" });
-    $.clear = btn("Clear", { title: "Clear the conversation" });
-    $.saveLog = btn("Export .md", { title: "Download the conversation as Markdown" });
-    const scope = el("div", { className: "ai-scope" }, $.scopeText,
-      el("label", { title: "Send the earlier questions and answers with the next question (for follow-ups)" }, $.keep, "Send earlier turns"),
-      el("span", { className: "folds" }, $.foldAll, $.unfoldAll, $.clear, $.saveLog));
+    // Narrow buttons (design principle 4.9) on a row of their own under the scope line
+    $.foldAll = btn("Compress", { className: "narrow", title: "Fold every answer to one line" });
+    $.unfoldAll = btn("Expand", { className: "narrow", title: "Open every answer" });
+    $.clear = btn("Clear", { className: "narrow", title: "Clear the conversation" });
+    $.saveLog = btn("Export .md", { className: "narrow", title: "Download the conversation as Markdown" });
+    const scope = el("div", { className: "ai-scope" },
+      el("div", { className: "line" }, $.scopeText,
+        el("label", { title: "Send the earlier questions and answers with the next question (for follow-ups)" }, $.keep, "Send earlier turns")),
+      el("div", { className: "folds" }, $.foldAll, $.unfoldAll, $.clear, $.saveLog));
     $.log = el("div", { className: "ai-log", ariaLive: "polite" });
     $.toBottom = btn("↓", { className: "ai-tobottom", title: "Go to the latest entry", hidden: true });
     const logWrap = el("div", { className: "ai-logwrap" }, $.log, $.toBottom);
@@ -498,6 +514,19 @@
     $.chat = el("form", { className: "ai-chat" }, $.attach, $.prompt, el("div", { className: "row" }, $.modelPick, $.send));
     $.panel.append($.resize, head, $.quick, scope, logWrap, $.status, $.chat);
     document.body.appendChild($.panel);
+
+    /* ── Place: the panel is a card under the title bar, aligned with the top of the content area, and the content shrinks
+          while it is open. The host sets --ai-right and --ai-bottom (its gutters) on body; --ai-top is measured here. ── */
+    const content = cfg.content || document.body;
+    content.classList.add("ai-content");
+    function place() {
+      const top = content.getBoundingClientRect().top + (parseFloat(getComputedStyle(content).paddingTop) || 0);
+      document.body.style.setProperty("--ai-top", Math.max(0, Math.round(top)) + "px");
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, { passive: true });
+    if (window.ResizeObserver) { const ro = new ResizeObserver(place); ro.observe(document.body); ro.observe(content); }
 
     /* Settings dialog */
     const field = (label, input) => el("label", {}, label, input);
@@ -682,8 +711,10 @@
       const hadFocus = document.activeElement === $.toggle;
       $.panel.hidden = !open;
       document.body.classList.toggle("ai-open", open);
-      // the toggle moves between the toolbar (hidden) and the panel header (open); the keyboard focus goes with it
-      (open ? head : cfg.toolbar)?.appendChild($.toggle);
+      // the toggle is last in the panel header while the panel is open, and floats at the same place on the screen
+      // (the top right of the content area) while it is hidden; the keyboard focus goes with it
+      (open ? head : document.body).appendChild($.toggle);
+      $.toggle.classList.toggle("floating", !open);
       const label = open ? "Hide AI panel" : "Show AI panel";
       $.toggle.title = `${label} (A)`;
       $.toggle.setAttribute("aria-label", label);
@@ -722,7 +753,7 @@
     }
     function updateScope() {
       const s = currentScope();
-      $.scopeText.replaceChildren("Scope: ", el("strong", { textContent: s ? s.label : "whole analysis" }));
+      $.scopeText.replaceChildren(el("b", { textContent: "Scope:" }), " ", el("strong", { textContent: s ? s.label : "whole analysis" }));
     }
     // Selection changes happen on clicks and keys in the host (which may stop propagation): listen in the capture
     // phase and refresh the scope line once the host has handled the event.

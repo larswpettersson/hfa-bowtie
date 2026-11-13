@@ -1463,6 +1463,7 @@
 
   function renderCenter(s) {
     document.body.dataset.theme = s.meta.theme;
+    document.querySelectorAll(".theme-toggle").forEach((b) => b.setAttribute("aria-checked", String(s.meta.theme === "dark")));
     document.querySelectorAll('[data-action="setTheme"]').forEach((btn) => {
       btn.classList.toggle("is-active", btn.dataset.themeValue === s.meta.theme);
     });
@@ -2668,7 +2669,7 @@
     }
   });
 
-  document.querySelectorAll(".action-btn").forEach((btn) => {
+  document.querySelectorAll(".action-btn, .theme-toggle").forEach((btn) => {
     btn.addEventListener("click", () => runAction(btn));
   });
 

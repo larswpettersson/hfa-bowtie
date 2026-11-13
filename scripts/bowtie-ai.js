@@ -240,8 +240,7 @@ For a complete bowtie give the compact form without "patch".`;
   window.BowtieAssist = HFAAssist.mount({
     id: "bowtie",
     title: "Bowtie analysis",
-    toolbar: document.querySelector(".toolbar"),
-    buttonClass: "action-btn",
+    content: document.querySelector(".bowtie-application"),
     systemPrompt: SYSTEM_PROMPT,
     schemaPrompt: SCHEMA_PROMPT,
     contextLabel: "Current bowtie (JSON, compact form)",
