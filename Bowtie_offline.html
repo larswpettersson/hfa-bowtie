@@ -30,7 +30,14 @@
       --font-sans: "Open Sans", Arial, sans-serif; /* font.family.base */
       --gap-row: 16px;
       --gap-col: 16px;
-      --barrier-width: 78px;
+      /* Barrier width follows the longest word of its description, between
+         6 characters (the mean Swedish word length) and 12 characters.
+         0.543em is the measured mean character width of Open Sans; 8px is the
+         barrier's side padding. Mirrors min/max width 54/100 on the Penpot
+         Main Component (14px text there). */
+      --barrier-char: 0.543em;
+      --barrier-min-width: calc(6 * var(--barrier-char) + 8px);
+      --barrier-max-width: calc(12 * var(--barrier-char) + 8px);
       --card-radius: 8px;
       /* Status colours mirror Penpot semantic tokens (background.*). */
       --status-implemented: #6baf8a;
@@ -180,14 +187,14 @@
     .bowtie {
       position: relative;
       display: grid;
-      /* Floor matches the side zones' own min-content width (card column
-         200px + two barrier columns + inner gaps/padding) so a shrinking
-         window triggers .bowtie-wrap's horizontal scroll instead of the
-         inner grid overflowing sideways into the center zone. */
+      /* Floor is the side zones' own min-content width (card column 200px +
+         barrier columns + inner gaps/padding) so a shrinking window triggers
+         .bowtie-wrap's horizontal scroll instead of the inner grid
+         overflowing sideways into the center zone. */
       grid-template-columns:
-        minmax(calc(200px + var(--barrier-width) * 2 + var(--gap-col) * 2 + 16px), 1fr)
+        minmax(min-content, 1fr)
         auto
-        minmax(calc(200px + var(--barrier-width) * 2 + var(--gap-col) * 2 + 16px), 1fr);
+        minmax(min-content, 1fr);
       grid-template-rows: auto 1fr;
       align-items: stretch;
       background: var(--color-background-sunken);
@@ -205,7 +212,7 @@
       grid-column: 1;
       grid-row: 1 / span 2;
       display: grid;
-      grid-template-columns: minmax(200px, 1fr) var(--barrier-width) var(--barrier-width);
+      grid-template-columns: minmax(200px, 1fr) min-content min-content;
       grid-template-rows: repeat(3, 1fr);
       gap: var(--gap-row) var(--gap-col);
       padding: 8px;
@@ -269,7 +276,7 @@
       grid-column: 3;
       grid-row: 2;
       display: grid;
-      grid-template-columns: var(--barrier-width) var(--barrier-width) minmax(200px, 1fr);
+      grid-template-columns: min-content min-content minmax(200px, 1fr);
       grid-template-rows: repeat(2, 1fr);
       gap: var(--gap-row) var(--gap-col);
       padding: 8px;
@@ -307,9 +314,12 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      width: var(--barrier-width);
+      /* No width: the barrier fills its min-content grid column, which is as
+         wide as the widest barrier in it (see .desc-text::after below). */
+      min-width: var(--barrier-min-width);
+      max-width: var(--barrier-max-width);
       height: 100%;
-      padding: 8px;
+      padding: 8px 4px;
       background: var(--color-background-base);
       color: var(--color-foreground);
       border: 1px solid var(--color-foreground);
@@ -412,6 +422,22 @@
       min-height: 0;
       overflow: hidden;
       text-align: center;
+    }
+    /* Invisible sizer: the full description without hyphenation or forced
+       breaks, so its min-content width is the longest word. That width sizes
+       the barrier (clamped by its min/max width), while the visible text
+       still hyphenates and breaks words longer than the maximum. */
+    .barrier .desc-text::after {
+      content: attr(data-full);
+      display: block;
+      height: 0;
+      overflow: hidden;
+      visibility: hidden;
+      pointer-events: none;
+      user-select: none;
+      hyphens: manual;
+      overflow-wrap: normal;
+      word-break: normal;
     }
 
     .top-event {
@@ -863,6 +889,14 @@
     document.querySelectorAll(".barrier .desc-text").forEach((el) => fitBarrierDescription(el));
   }
 
+  // A barrier's width follows its text (CSS min-content), so typing can move
+  // the columns without resizing a zone. Keep the connectors attached.
+  const barrierResizeObserver = new ResizeObserver(() => {
+    if (printing) return;
+    fitAllBarrierDescriptions();
+    positionAllConnectors();
+  });
+
   // ---------- Grid placement ----------
 
   function applyPlacement(el, row, col, rowSpan) {
@@ -879,13 +913,13 @@
   function rebuildLeftGrid(left) {
     zoneLeft.style.gridTemplateRows = `repeat(${left.rows}, 1fr)`;
     zoneLeft.style.gridTemplateColumns =
-      `minmax(200px, 1fr) ${"var(--barrier-width) ".repeat(left.barrierCols)}`.trim();
+      `minmax(200px, 1fr) ${"min-content ".repeat(left.barrierCols)}`.trim();
   }
 
   function rebuildRightGrid(right) {
     zoneRight.style.gridTemplateRows = `repeat(${right.rows}, 1fr)`;
     zoneRight.style.gridTemplateColumns =
-      `${"var(--barrier-width) ".repeat(right.barrierCols)}minmax(200px, 1fr)`.trim();
+      `${"min-content ".repeat(right.barrierCols)}minmax(200px, 1fr)`.trim();
   }
 
   // ---------- Pure layout ----------
@@ -2139,6 +2173,7 @@
     desc.dataset.role = "description";
 
     el.append(idTag, desc);
+    barrierResizeObserver.observe(el);
     return el;
   }
 

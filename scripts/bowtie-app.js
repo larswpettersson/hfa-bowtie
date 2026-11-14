@@ -65,6 +65,14 @@
     document.querySelectorAll(".barrier .desc-text").forEach((el) => fitBarrierDescription(el));
   }
 
+  // A barrier's width follows its text (CSS min-content), so typing can move
+  // the columns without resizing a zone. Keep the connectors attached.
+  const barrierResizeObserver = new ResizeObserver(() => {
+    if (printing) return;
+    fitAllBarrierDescriptions();
+    positionAllConnectors();
+  });
+
   // ---------- Grid placement ----------
 
   function applyPlacement(el, row, col, rowSpan) {
@@ -81,13 +89,13 @@
   function rebuildLeftGrid(left) {
     zoneLeft.style.gridTemplateRows = `repeat(${left.rows}, 1fr)`;
     zoneLeft.style.gridTemplateColumns =
-      `minmax(200px, 1fr) ${"var(--barrier-width) ".repeat(left.barrierCols)}`.trim();
+      `minmax(200px, 1fr) ${"min-content ".repeat(left.barrierCols)}`.trim();
   }
 
   function rebuildRightGrid(right) {
     zoneRight.style.gridTemplateRows = `repeat(${right.rows}, 1fr)`;
     zoneRight.style.gridTemplateColumns =
-      `${"var(--barrier-width) ".repeat(right.barrierCols)}minmax(200px, 1fr)`.trim();
+      `${"min-content ".repeat(right.barrierCols)}minmax(200px, 1fr)`.trim();
   }
 
   // ---------- Pure layout ----------
@@ -1341,6 +1349,7 @@
     desc.dataset.role = "description";
 
     el.append(idTag, desc);
+    barrierResizeObserver.observe(el);
     return el;
   }
 
