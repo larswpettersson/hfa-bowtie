@@ -450,6 +450,15 @@
   .ai-toggle:hover { border-color: var(--color-foreground); }
   .ai-toggle:active { background: var(--color-foreground); border-color: var(--color-foreground); color: var(--color-background-elevated); }
   .ai-toggle.floating { position: fixed; top: calc(var(--ai-top, 0px) + 11px); right: calc(var(--ai-right, 0px) + 13px); z-index: 8; }
+  /* While the panel is hidden the content card has a notch in its top-right corner, where the toggle sits (Penpot: the content
+     shape in "Screen / panel closed"). The panel draws it over the card's corner with the colours it measures there (the card's
+     background and border, the page behind it), so the host needs no code for it. The SVG is 8 px wider and taller than the
+     60 x 48 notch, for the two rounded corners where the card's edges turn into it. */
+  .ai-notch { position: fixed; top: var(--ai-top, 0px); right: var(--ai-right, 0px); width: 68px; height: 56px; z-index: 7; pointer-events: none; }
+  .ai-notch svg { display: block; width: 68px; height: 56px; }
+  .ai-notch .card { fill: var(--notch-card, var(--color-background-elevated)); }
+  .ai-notch .page { fill: var(--notch-page, var(--color-background-base)); }
+  .ai-notch .line { fill: none; stroke: var(--notch-line, var(--color-foreground-muted)); stroke-width: 1; }
   /* Without a provider: a warning pill and a box in the log. Status is shown with the fill only. */
   .ai-panel { --ai-warn-bg: #fad153; }
   body[data-theme="dark"] .ai-panel { --ai-warn-bg: #544a06; }
@@ -457,8 +466,11 @@
   .ai-noprovider { background: var(--color-background-warning, var(--ai-warn-bg)); color: var(--color-foreground); border: 1px solid var(--color-foreground);
     border-radius: 6px; padding: 12px; margin: 0; }
   .ai-panel.no-provider .ai-msg.welcome { display: none; }
-  @media (max-width: 760px) { body.ai-open .ai-content { margin-right: 0; } .ai-panel { left: 0; right: 0; width: auto; border-radius: 0; } .ai-resize { display: none; } }
-  @media print { .ai-panel, .ai-toggle { display: none !important; } body.ai-open .ai-content { margin-right: 0; } }
+  /* On a narrow screen the panel cannot sit beside the content: it lies over it as the same card, with the same gutters,
+     corners and toggle place, and only as wide as the screen allows. */
+  @media (max-width: 760px) { body.ai-open .ai-content { margin-right: 0; }
+    .ai-panel { width: min(var(--ai-w, 440px), calc(100vw - var(--ai-right, 0px) - 16px)); } .ai-resize { display: none; } }
+  @media print { .ai-panel, .ai-toggle, .ai-notch { display: none !important; } body.ai-open .ai-content { margin-right: 0; } }
   `;
 
   /* ═══════════════════════════════════════════════════════════════════════
@@ -479,6 +491,13 @@
     $.toggle.innerHTML = '<svg viewBox="0 0 16 12" aria-hidden="true" focusable="false"><rect x=".625" y=".625" width="14.75" height="10.75" rx="2" fill="none" stroke="currentColor" stroke-width="1.25"/><line x1="10.5" y1=".625" x2="10.5" y2="11.375" stroke="currentColor" stroke-width="1.25"/></svg>';
     $.toggle.setAttribute("aria-expanded", "true");
     $.toggle.setAttribute("aria-controls", "ai-panel");
+    // The notch in the content card's corner while the panel is hidden: the page background outside the notch outline, the card
+    // background in the two corner slivers the outline cuts through, and the outline itself (1 px, radius 8).
+    $.notch = el("div", { className: "ai-notch", ariaHidden: "true" });
+    $.notch.innerHTML = '<svg viewBox="-8 0 68 56" focusable="false">'
+      + '<rect class="card" x="-8" y="0" width="8" height="8"/><rect class="card" x="52" y="48" width="8" height="8"/>'
+      + '<path class="page" d="M-8 0H60V56H59.5A8 8.5 0 0 0 51.5 47.5H8.5A8 8 0 0 1 0.5 39.5V9A8.5 8.5 0 0 0 -8 0.5Z"/>'
+      + '<path class="line" d="M-8 0.5A8.5 8.5 0 0 1 0.5 9V39.5A8 8 0 0 0 8.5 47.5H51.5A8 8.5 0 0 1 59.5 56"/></svg>';
 
     $.panel = el("aside", { className: "ai-panel", id: "ai-panel", hidden: true, ariaLabel: cfg.title });
     $.resize = el("div", { className: "ai-resize", tabIndex: 0, title: "Drag to resize (arrow keys work too)" });
@@ -522,11 +541,28 @@
     function place() {
       const top = content.getBoundingClientRect().top + (parseFloat(getComputedStyle(content).paddingTop) || 0);
       document.body.style.setProperty("--ai-top", Math.max(0, Math.round(top)) + "px");
+      if ($.notch.isConnected) colourNotch(top);
+    }
+    /** The notch takes its colours from what is under it: the card at the corner (background and border) and the page behind it. */
+    function colourNotch(top) {
+      const opaque = (c) => c && c !== "transparent" && !/^rgba\(.*,\s*0\)$/.test(c);
+      const right = window.innerWidth - (parseFloat(getComputedStyle(document.body).getPropertyValue("--ai-right")) || 0);
+      let card = document.elementFromPoint(right - 4, top + 4);
+      while (card && !(parseFloat(getComputedStyle(card).borderTopWidth) > 0 && opaque(getComputedStyle(card).backgroundColor))) card = card.parentElement;
+      let page = card ? card.parentElement : null;
+      while (page && !opaque(getComputedStyle(page).backgroundColor)) page = page.parentElement;
+      const set = (k, v) => v ? $.notch.style.setProperty(k, v) : $.notch.style.removeProperty(k);
+      set("--notch-card", card && getComputedStyle(card).backgroundColor);
+      set("--notch-line", card && getComputedStyle(card).borderTopColor);
+      set("--notch-page", page && getComputedStyle(page).backgroundColor);
     }
     place();
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, { passive: true });
     if (window.ResizeObserver) { const ro = new ResizeObserver(place); ro.observe(document.body); ro.observe(content); }
+    // The notch's colours follow the theme: the hosts switch it with data-theme on body or html, STPA also with the system theme.
+    [document.documentElement, document.body].forEach((n) => new MutationObserver(place).observe(n, { attributes: true, attributeFilter: ["data-theme"] }));
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", place);
 
     /* Settings dialog */
     const field = (label, input) => el("label", {}, label, input);
@@ -715,6 +751,7 @@
       // (the top right of the content area) while it is hidden; the keyboard focus goes with it
       (open ? head : document.body).appendChild($.toggle);
       $.toggle.classList.toggle("floating", !open);
+      if (open) $.notch.remove(); else { document.body.appendChild($.notch); place(); }
       const label = open ? "Hide AI panel" : "Show AI panel";
       $.toggle.title = `${label} (A)`;
       $.toggle.setAttribute("aria-label", label);
