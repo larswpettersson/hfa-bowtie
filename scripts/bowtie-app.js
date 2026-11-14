@@ -25,8 +25,10 @@
 
   // ---------- Text helpers ----------
 
+  // The viewable text of a block is capped at 100 characters; three dots show that it is capped. The full text is kept and shown while editing.
+  const MAX_VISIBLE_CHARS = 100;
   function truncateDescription(description) {
-    return description.length > 200 ? description.substring(0, 200) + "..." : description;
+    return description.length > MAX_VISIBLE_CHARS ? description.substring(0, MAX_VISIBLE_CHARS) + "..." : description;
   }
 
   function readEditableText(el) {
@@ -54,11 +56,11 @@
     let hi = capped.length;
     while (lo < hi) {
       const mid = Math.ceil((lo + hi) / 2);
-      writeEditableText(el, capped.slice(0, mid).trimEnd() + "…");
+      writeEditableText(el, capped.slice(0, mid).trimEnd() + "...");
       if (el.scrollHeight <= el.clientHeight + 1) lo = mid;
       else hi = mid - 1;
     }
-    writeEditableText(el, lo > 0 ? capped.slice(0, lo).trimEnd() + "…" : "…");
+    writeEditableText(el, lo > 0 ? capped.slice(0, lo).trimEnd() + "..." : "...");
   }
 
   function fitAllBarrierDescriptions() {
@@ -1116,7 +1118,7 @@
     });
   }
 
-  function beginFieldEdit(componentEl, role = "id") {
+  function beginFieldEdit(componentEl, role = "description") {
     if (!componentEl) return;
     const field = componentEl.querySelector(`[data-role="${role}"]`);
     if (!field) return;
@@ -1127,7 +1129,7 @@
 
   function focusBarrierIdField(barrierId) {
     const seg = getBarrierSegmentEls(barrierId)[0];
-    if (seg) beginFieldEdit(seg, "id");
+    if (seg) beginFieldEdit(seg, "description");
   }
 
   function getSelectedComponentEl() {
@@ -1308,10 +1310,7 @@
       return true;
     }
 
-    beginFieldEdit(
-      el,
-      el.classList.contains("hazard") || el.classList.contains("top-event") ? "description" : "id"
-    );
+    beginFieldEdit(el, "description");
     return true;
   }
 
@@ -1379,7 +1378,6 @@
 
     const idTag = document.createElement("div");
     idTag.className = "id-tag";
-    idTag.contentEditable = "true";
     idTag.dataset.role = "id";
     idTag.id = card.idTagId;
 
@@ -1400,7 +1398,6 @@
 
     const idTag = document.createElement("div");
     idTag.className = "id-tag";
-    idTag.contentEditable = "true";
     idTag.dataset.role = "id";
     idTag.id = segmentIdTagId(barrier, seg, index);
 
@@ -1602,6 +1599,7 @@
     });
 
     const barrier = getActiveBarrierState();
+    updateLinkBar();
     if (!barrier) {
       document.body.classList.remove("linking-mode");
       return;
@@ -1850,7 +1848,7 @@
   // ---------- Tab order ----------
 
   function fieldsOf(el) {
-    return el ? Array.from(el.querySelectorAll(".id-tag, .desc-text")) : [];
+    return el ? Array.from(el.querySelectorAll(".desc-text")) : [];
   }
 
   function firstBarrierSegmentsInColumnOrder(zone) {
@@ -1898,7 +1896,7 @@
       el.tabIndex = i++;
     });
 
-    document.querySelectorAll(".barrier .id-tag, .barrier .desc-text").forEach((f) => {
+    document.querySelectorAll(".barrier .desc-text").forEach((f) => {
       if (!orderedFields.includes(f)) f.tabIndex = -1;
     });
   }
@@ -2122,6 +2120,51 @@
     else barrier.protects.push(idTag.id);
 
     applyLinkModeUI();
+  }
+
+  /** The number in a cause's or consequence's id (C12 → 12, K3 → 3), or null. */
+  function idNumber(card) {
+    const m = /(\d+)\s*$/.exec(String(card.id || ""));
+    return m ? Number(m[1]) : null;
+  }
+
+  /** The cause or consequence a typed number points at: the one whose id ends in that number (not the row number). */
+  function findLinkTargetByNumber(barrierId, n) {
+    const cards = getLeafCardsInRowOrder(barrierId);
+    if (cards.some((c) => idNumber(c) !== null)) return cards.find((c) => idNumber(c) === n) || null;
+    return cards[n - 1] || null; // ids without numbers: fall back to the order on screen
+  }
+
+  // Alt+digits: the digits typed while Alt/Option is held; released Alt links (or unlinks) that number.
+  let linkNumberChord = "";
+  document.addEventListener("keyup", (evt) => {
+    if (evt.key !== "Alt" || !linkNumberChord) return;
+    const n = Number(linkNumberChord);
+    linkNumberChord = "";
+    if (ui.activeBarrierId) {
+      const cardState = findLinkTargetByNumber(ui.activeBarrierId, n);
+      const cardEl = cardState && document.getElementById(cardState.domId);
+      if (cardEl) toggleProtection(cardEl);
+      else showStatus(`No cause or consequence with number ${n}`, "warning");
+    }
+    updateLinkBar();
+  });
+  window.addEventListener("blur", () => { if (linkNumberChord) { linkNumberChord = ""; updateLinkBar(); } });
+
+  /** The bar next to the Add buttons: the ids of what the selected barrier protects (ids, not row numbers). */
+  function updateLinkBar() {
+    const bar = document.getElementById("linkBar");
+    if (!bar) return;
+    const barrier = getActiveBarrierState();
+    if (!barrier) { bar.textContent = ""; bar.style.visibility = "hidden"; return; }
+    const cards = getLeafCardsInRowOrder(barrier.barrierId);
+    const ids = cards.filter((c) => barrier.protects.includes(c.idTagId)).map((c) => c.id);
+    const side = barrierSide(barrier.barrierId);
+    const what = side === "left" ? "causes" : "consequences";
+    const hint = side === "left" ? "Alt+digits link a cause by number" : "Alt+digits link a consequence by number";
+    bar.textContent = `${barrier.id} protects ${what}: ${ids.length ? ids.join(", ") : "none"}` +
+      (linkNumberChord ? `  ·  Alt+${linkNumberChord.split("").join("+")} → ${Number(linkNumberChord)}` : `  ·  ${hint}`);
+    bar.style.visibility = "visible";
   }
 
   function getLeafCardsInRowOrder(barrierId) {
@@ -2457,7 +2500,7 @@
     if (ui.activeBarrierId || !ui.selectedBarrierIds.size) return;
     if (document.activeElement && document.activeElement.isContentEditable) return;
     if (evt.metaKey || evt.ctrlKey) return;
-    if (evt.altKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
+    if (!evt.shiftKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
       evt.preventDefault();
       evt.stopImmediatePropagation();
       moveBarriers([...ui.selectedBarrierIds], evt.key === "ArrowLeft" ? -1 : 1);
@@ -2484,30 +2527,34 @@
       return;
     }
 
-    if (evt.altKey && !evt.metaKey && !evt.ctrlKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
+    // Alt/Option held while digits are typed builds a number (Alt+1+2, release Alt, links number 12); see the keyup below.
+    const digit = evt.altKey && !evt.metaKey && !evt.ctrlKey ? /^(?:Digit|Numpad)(\d)$/.exec(evt.code) : null;
+    if (digit) {
       evt.preventDefault();
       evt.stopImmediatePropagation();
-      moveBarrierColumn(ui.activeBarrierId, evt.key === "ArrowLeft" ? -1 : 1); // Alt/Option+arrow moves (5.6)
+      linkNumberChord += digit[1];
+      updateLinkBar();
+      return;
+    }
+
+    // A selected barrier moves along the only direction it can: left or right (Alt/Option+arrow does the same).
+    if (!evt.metaKey && !evt.ctrlKey && !evt.shiftKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      moveBarrierColumn(ui.activeBarrierId, evt.key === "ArrowLeft" ? -1 : 1);
       return;
     }
 
     if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
 
     if (/^[1-9]$/.test(evt.key)) {
-      const cards = getLeafCardsInRowOrder(ui.activeBarrierId);
-      const cardState = cards[Number(evt.key) - 1];
+      const cardState = findLinkTargetByNumber(ui.activeBarrierId, Number(evt.key));
       if (cardState) {
         evt.preventDefault();
         evt.stopImmediatePropagation();
         const cardEl = document.getElementById(cardState.domId);
         if (cardEl) toggleProtection(cardEl);
       }
-      return;
-    }
-
-    if (evt.key === "ArrowLeft" || evt.key === "ArrowRight") {
-      evt.preventDefault(); // plain arrows never move an object (5.6)
-      evt.stopImmediatePropagation();
       return;
     }
 
@@ -2533,10 +2580,11 @@
     const arrowKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
     if (!arrowKeys.includes(evt.key)) return;
 
+    // A selected cause or consequence moves up and down (with or without Alt/Option); it cannot move sideways.
     if (
-      evt.altKey &&
       !evt.metaKey &&
       !evt.ctrlKey &&
+      !evt.shiftKey &&
       (evt.key === "ArrowUp" || evt.key === "ArrowDown") &&
       selectedFocusDomId &&
       findCardByDomId(selectedFocusDomId) &&
@@ -2563,8 +2611,13 @@
       return;
     }
 
-    if (evt.altKey && !evt.metaKey && !evt.ctrlKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
-      evt.preventDefault(); // the browser's Alt+←/→ history is stopped in the diagram
+    if (
+      !evt.metaKey && !evt.ctrlKey && !evt.shiftKey &&
+      (evt.key === "ArrowLeft" || evt.key === "ArrowRight") &&
+      (evt.altKey || (selectedFocusDomId && findCardByDomId(selectedFocusDomId) && ui.selectedIds.size <= 1))
+    ) {
+      evt.preventDefault(); // the browser's Alt+←/→ history is stopped in the diagram; a selected card cannot move sideways
+      evt.stopImmediatePropagation();
       return;
     }
 
@@ -2579,9 +2632,10 @@
     if (evt.shiftKey && evt.target.closest(".barrier")) evt.preventDefault(); // no text selection on Shift+click
     const cardEl = evt.target.closest(".card");
     if (cardEl && cardEl.classList.contains("link-target")) evt.preventDefault();
-    if (isModClick(evt) && evt.target.closest(".id-tag, .desc-text")) {
-      evt.preventDefault();
-    }
+    // A click on a block selects the block, not its text (as in STPA): the mouse does not put a caret in a text that is not
+    // being edited; Enter does that. While a text is edited, a click inside it moves the caret as usual.
+    const field = evt.target.closest(".id-tag, .desc-text");
+    if (field && field !== document.activeElement) evt.preventDefault();
   });
 
   // The mouse sets the indication on the object under it (a real movement only: a scroll under a still pointer does not).
@@ -2598,9 +2652,13 @@
   bowtie.addEventListener("mouseleave", () => { if (!ui.activeBarrierId) clearKeyboardHover(); });
 
   document.addEventListener("click", (evt) => {
+    const clickedField = evt.target.closest(".id-tag, .desc-text");
+    if (clickedField && clickedField === document.activeElement) return; // a click in the text being edited
+    const editing = document.activeElement;
+    if (editing && editing.isContentEditable && !editing.contains(evt.target)) editing.blur(); // a click elsewhere applies the edit
     const mod = isModClick(evt);
     const barrierEl = evt.target.closest(".barrier");
-    if (evt.shiftKey && barrierEl && !evt.target.closest(".id-tag, .desc-text")) {
+    if (evt.shiftKey && barrierEl) {
       evt.preventDefault();
       toggleBarrierSelection(barrierEl.dataset.barrierId);
       return;
@@ -2634,25 +2692,23 @@
       }
     }
 
-    if (barrierEl && !evt.target.closest(".id-tag, .desc-text")) {
+    if (barrierEl) {
       enterLinkMode(barrierEl.dataset.barrierId);
       return;
     }
 
-    if (cardEl && !ui.activeBarrierId && !evt.target.closest(".id-tag, .desc-text")) {
+    if (cardEl && !ui.activeBarrierId) {
       selectComponent(cardEl);
       return;
     }
 
-    if (topEventEl && !ui.activeBarrierId && !evt.target.closest(".desc-text")) {
-      evt.preventDefault();
-      beginFieldEdit(topEventEl, "description");
+    if (topEventEl && !ui.activeBarrierId) {
+      selectComponent(topEventEl);
       return;
     }
 
-    if (hazardEl && !ui.activeBarrierId && !evt.target.closest(".desc-text")) {
-      evt.preventDefault();
-      beginFieldEdit(hazardEl, "description");
+    if (hazardEl && !ui.activeBarrierId) {
+      selectComponent(hazardEl);
       return;
     }
 

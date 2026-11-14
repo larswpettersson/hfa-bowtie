@@ -27,6 +27,7 @@
       --color-foreground: #0d1117;
       --color-foreground-muted: #57606a;
       --color-foreground-subtle: #8b949e;
+      --color-brand-primary: #d70000;
       --font-sans: "Open Sans", Arial, sans-serif; /* font.family.base */
       --gap-row: 16px;
       --gap-col: 16px;
@@ -53,6 +54,7 @@
       --color-foreground: #fafbfc;
       --color-foreground-muted: #c9d1d9;
       --color-foreground-subtle: #9ca3af;
+      --color-brand-primary: #ff4444;
       --status-implemented: #1a5a42;
       --status-not-implemented: #602a36;
       --status-temporary: #254f7a;
@@ -92,6 +94,7 @@
     .panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; background: var(--color-background-elevated); border: 1px solid var(--color-foreground-muted); border-radius: 8px; padding: 12px 16px 16px; gap: 12px; }
     .panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; }
     .panel-head h2 { margin: 0 8px 0 0; font-size: 16px; font-weight: 600; }
+    .link-bar { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: var(--color-foreground-muted); }
     .panel-body { display: flex; gap: 16px; flex: 1 1 auto; min-height: 0; }
 
     /* Matches Penpot "Bowtie Application": Toolbar sibling above Bowtie example;
@@ -399,12 +402,14 @@
       word-break: break-word;
     }
 
+    .desc-text:focus { cursor: text; }
     .id-tag:focus,
     .desc-text:focus {
       background: color-mix(in srgb, var(--color-foreground) 12%, transparent);
     }
 
     .desc-text {
+      cursor: default;
       margin: 0;
       font-size: 16px;
       line-height: 1.2;
@@ -638,6 +643,7 @@
           <button type="button" class="action-btn" aria-label="Add Preventive Barrier" data-action="addPreventiveBarrier" data-shortcut="b" aria-keyshortcuts="B" title="Add a preventive barrier"><span class="btn-label">Add Preventive <span class="ul">B</span>arrier</span></button>
           <button type="button" class="action-btn" aria-label="Add Reactive Barrier" data-action="addReactiveBarrier" data-shortcut="r" aria-keyshortcuts="R" title="Add a reactive barrier"><span class="btn-label">Add <span class="ul">R</span>eactive Barrier</span></button>
           <button type="button" class="action-btn" aria-label="Add Consequence" data-action="addConsequence" data-shortcut="q" aria-keyshortcuts="Q" title="Add a consequence"><span class="btn-label">Add Conse<span class="ul">q</span>uence</span></button>
+          <span class="link-bar" id="linkBar" role="status" aria-live="polite" style="visibility:hidden"></span>
         </div>
         <div class="panel-body">
       <div class="bowtie-wrap">
@@ -647,36 +653,36 @@
           </div>
           <section class="zone zone--left" id="zone-left" aria-label="Cause and Preventive Barriers">
             <article class="card" id="c-C1" data-kind="cause" data-row="1" data-col="1">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-C1" data-target="id-TE">C1</div>
+              <div class="id-tag" data-role="id" id="id-C1" data-target="id-TE">C1</div>
               <p class="desc-text" contenteditable="true" data-role="description">Lokföraren tappar uppmärksamheten (trötthet, distraktion eller hög arbetsbelastning)</p>
             </article>
             <article class="card" id="c-C2" data-kind="cause" data-row="2" data-col="1">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-C2" data-target="id-TE">C2</div>
+              <div class="id-tag" data-role="id" id="id-C2" data-target="id-TE">C2</div>
               <p class="desc-text" contenteditable="true" data-role="description">Lokföraren uppfattar signalen fel eller förväxlar den, t.ex. förväntar sig grön signal</p>
             </article>
             <article class="card" id="c-C3" data-kind="cause" data-row="3" data-col="1">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-C3" data-target="id-TE">C3</div>
+              <div class="id-tag" data-role="id" id="id-C3" data-target="id-TE">C3</div>
               <p class="desc-text" contenteditable="true" data-role="description">Dålig signalsikt på grund av dimma, snö, motljus eller växtlighet vid signalen</p>
             </article>
             <article class="card" id="c-C4" data-kind="cause" data-row="4" data-col="1">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-C4" data-target="id-TE">C4</div>
+              <div class="id-tag" data-role="id" id="id-C4" data-target="id-TE">C4</div>
               <p class="desc-text" contenteditable="true" data-role="description">Förlängd bromssträcka på grund av låg friktion (löv eller halka på rälsen)</p>
             </article>
 
             <div class="barrier" id="b-p1" data-barrier-id="p1" data-row="1" data-col="2" data-row-span="2" data-strength="Normal" data-status="Partly Implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-P1">P1</div>
+              <div class="id-tag" data-role="id" id="id-P1">P1</div>
               <p class="desc-text" contenteditable="true" data-role="description">Förarutbildning samt trötthets- och vilotidsregler</p>
             </div>
             <div class="barrier" id="b-p2" data-barrier-id="p2" data-row="3" data-col="2" data-row-span="1" data-strength="Normal" data-status="Implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-P2">P2</div>
+              <div class="id-tag" data-role="id" id="id-P2">P2</div>
               <p class="desc-text" contenteditable="true" data-role="description">Röjning av växtlighet och signalsiktsbesiktning</p>
             </div>
             <div class="barrier" id="b-p3" data-barrier-id="p3" data-row="4" data-col="2" data-row-span="1" data-strength="Weak" data-status="To be implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-P3">P3</div>
+              <div class="id-tag" data-role="id" id="id-P3">P3</div>
               <p class="desc-text" contenteditable="true" data-role="description">Halkbekämpning (sandning)</p>
             </div>
             <div class="barrier" id="b-p4" data-barrier-id="p4" data-row="1" data-col="3" data-row-span="4" data-strength="Strong" data-status="Implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-P4">P4</div>
+              <div class="id-tag" data-role="id" id="id-P4">P4</div>
               <p class="desc-text" contenteditable="true" data-role="description">ATC: hastighetsövervakning och automatisk inbromsning</p>
             </div>
           </section>
@@ -698,28 +704,28 @@
 
           <section class="zone zone--right" id="zone-right" aria-label="Reactive Barriers and Consequences">
             <div class="barrier" id="b-r1" data-barrier-id="r1" data-row="1" data-col="1" data-row-span="2" data-strength="Normal" data-status="Implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-R1">R1</div>
+              <div class="id-tag" data-role="id" id="id-R1">R1</div>
               <p class="desc-text" contenteditable="true" data-role="description">GSM-R-nödanrop till trafikledare</p>
             </div>
             <div class="barrier" id="b-r2" data-barrier-id="r2" data-row="1" data-col="2" data-row-span="2" data-strength="Strong" data-status="Not Implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-R2">R2</div>
+              <div class="id-tag" data-role="id" id="id-R2">R2</div>
               <p class="desc-text" contenteditable="true" data-role="description">Flankskydd och skyddssträcka</p>
             </div>
             <div class="barrier" id="b-r3" data-barrier-id="r3" data-row="3" data-col="1" data-row-span="1" data-strength="Normal" data-status="Unknown">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-R3">R3</div>
+              <div class="id-tag" data-role="id" id="id-R3">R3</div>
               <p class="desc-text" contenteditable="true" data-role="description">Trafikstörningsplan</p>
             </div>
 
             <article class="card" id="c-K1" data-kind="consequence" data-row="1" data-col="3">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-K1" data-target="id-TE">K1</div>
+              <div class="id-tag" data-role="id" id="id-K1" data-target="id-TE">K1</div>
               <p class="desc-text" contenteditable="true" data-role="description">Kollision med annat tåg i spårkorsning eller mot mötande tåg</p>
             </article>
             <article class="card" id="c-K2" data-kind="consequence" data-row="2" data-col="3">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-K2" data-target="id-TE">K2</div>
+              <div class="id-tag" data-role="id" id="id-K2" data-target="id-TE">K2</div>
               <p class="desc-text" contenteditable="true" data-role="description">Avsporing vid körning över växel i fel läge</p>
             </article>
             <article class="card" id="c-K3" data-kind="consequence" data-row="3" data-col="3">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-K3" data-target="id-TE">K3</div>
+              <div class="id-tag" data-role="id" id="id-K3" data-target="id-TE">K3</div>
               <p class="desc-text" contenteditable="true" data-role="description">Trafikstörning och driftstopp på berörd bana</p>
             </article>
           </section>
@@ -746,7 +752,8 @@
 
           <h3>Redigera</h3>
           <dl>
-            <dt>Enter</dt><dd>Redigera</dd>
+            <dt>Klick</dt><dd>Markerar blocket (inte texten)</dd>
+            <dt>Enter</dt><dd>Redigera texten i det markerade eller indikerade blocket (id:n kan inte redigeras)</dd>
             <dt>Cmd/Ctrl+Enter</dt><dd>Markera / verkställ</dd>
             <dt>Esc</dt><dd>Ångra</dd>
             <dt>Shift+Enter</dt><dd>Ny rad</dd>
@@ -759,7 +766,8 @@
           <h3>Navigera</h3>
           <dl>
             <dt>Piltangenter</dt><dd>Förhandsvisa vid hover; markera med Cmd/Ctrl+Enter</dd>
-            <dt>Alt+↑ ↓</dt><dd>Flytta rad</dd>
+            <dt>↑ ↓</dt><dd>Markerad orsak/konsekvens: flytta rad (Alt+↑ ↓ fungerar också)</dd>
+            <dt>← →</dt><dd>Markerad barriär: flytta kolumn</dd>
             <dt>Shift+↑ ↓</dt><dd>Utöka</dd>
             <dt>Cmd/Ctrl+klick</dt><dd>Flervalsmarkering</dd>
             <dt>Mellanslag + dra</dt><dd>Panorera diagrammet</dd>
@@ -767,9 +775,10 @@
 
           <h3>Länkläge (barriär markerad)</h3>
           <dl>
-            <dt>Alt/Option + ← →</dt><dd>Flytta kolumn</dd>
+            <dt>← → / Alt+← →</dt><dd>Flytta kolumn</dd>
             <dt>↑ ↓</dt><dd>Bläddra bland länkar</dd>
-            <dt>1–9</dt><dd>Växla länk</dd>
+            <dt>1–9</dt><dd>Växla länk till orsak/konsekvens med det id-numret (C3, K3 …)</dd>
+            <dt>Alt/Option + siffror</dt><dd>Fler än 9: håll Alt och skriv siffrorna, t.ex. Alt+1+2, släpp Alt → nummer 12</dd>
             <dt>Enter / Esc</dt><dd>Verkställ / ångra</dd>
             <dt>I / P / N / T / U</dt><dd>Status</dd>
             <dt>S / L / W</dt><dd>Strength</dd>
@@ -851,8 +860,10 @@
 
   // ---------- Text helpers ----------
 
+  // The viewable text of a block is capped at 100 characters; three dots show that it is capped. The full text is kept and shown while editing.
+  const MAX_VISIBLE_CHARS = 100;
   function truncateDescription(description) {
-    return description.length > 200 ? description.substring(0, 200) + "..." : description;
+    return description.length > MAX_VISIBLE_CHARS ? description.substring(0, MAX_VISIBLE_CHARS) + "..." : description;
   }
 
   function readEditableText(el) {
@@ -880,11 +891,11 @@
     let hi = capped.length;
     while (lo < hi) {
       const mid = Math.ceil((lo + hi) / 2);
-      writeEditableText(el, capped.slice(0, mid).trimEnd() + "…");
+      writeEditableText(el, capped.slice(0, mid).trimEnd() + "...");
       if (el.scrollHeight <= el.clientHeight + 1) lo = mid;
       else hi = mid - 1;
     }
-    writeEditableText(el, lo > 0 ? capped.slice(0, lo).trimEnd() + "…" : "…");
+    writeEditableText(el, lo > 0 ? capped.slice(0, lo).trimEnd() + "..." : "...");
   }
 
   function fitAllBarrierDescriptions() {
@@ -1942,7 +1953,7 @@
     });
   }
 
-  function beginFieldEdit(componentEl, role = "id") {
+  function beginFieldEdit(componentEl, role = "description") {
     if (!componentEl) return;
     const field = componentEl.querySelector(`[data-role="${role}"]`);
     if (!field) return;
@@ -1953,7 +1964,7 @@
 
   function focusBarrierIdField(barrierId) {
     const seg = getBarrierSegmentEls(barrierId)[0];
-    if (seg) beginFieldEdit(seg, "id");
+    if (seg) beginFieldEdit(seg, "description");
   }
 
   function getSelectedComponentEl() {
@@ -2134,10 +2145,7 @@
       return true;
     }
 
-    beginFieldEdit(
-      el,
-      el.classList.contains("hazard") || el.classList.contains("top-event") ? "description" : "id"
-    );
+    beginFieldEdit(el, "description");
     return true;
   }
 
@@ -2205,7 +2213,6 @@
 
     const idTag = document.createElement("div");
     idTag.className = "id-tag";
-    idTag.contentEditable = "true";
     idTag.dataset.role = "id";
     idTag.id = card.idTagId;
 
@@ -2226,7 +2233,6 @@
 
     const idTag = document.createElement("div");
     idTag.className = "id-tag";
-    idTag.contentEditable = "true";
     idTag.dataset.role = "id";
     idTag.id = segmentIdTagId(barrier, seg, index);
 
@@ -2428,6 +2434,7 @@
     });
 
     const barrier = getActiveBarrierState();
+    updateLinkBar();
     if (!barrier) {
       document.body.classList.remove("linking-mode");
       return;
@@ -2676,7 +2683,7 @@
   // ---------- Tab order ----------
 
   function fieldsOf(el) {
-    return el ? Array.from(el.querySelectorAll(".id-tag, .desc-text")) : [];
+    return el ? Array.from(el.querySelectorAll(".desc-text")) : [];
   }
 
   function firstBarrierSegmentsInColumnOrder(zone) {
@@ -2724,7 +2731,7 @@
       el.tabIndex = i++;
     });
 
-    document.querySelectorAll(".barrier .id-tag, .barrier .desc-text").forEach((f) => {
+    document.querySelectorAll(".barrier .desc-text").forEach((f) => {
       if (!orderedFields.includes(f)) f.tabIndex = -1;
     });
   }
@@ -2948,6 +2955,51 @@
     else barrier.protects.push(idTag.id);
 
     applyLinkModeUI();
+  }
+
+  /** The number in a cause's or consequence's id (C12 → 12, K3 → 3), or null. */
+  function idNumber(card) {
+    const m = /(\d+)\s*$/.exec(String(card.id || ""));
+    return m ? Number(m[1]) : null;
+  }
+
+  /** The cause or consequence a typed number points at: the one whose id ends in that number (not the row number). */
+  function findLinkTargetByNumber(barrierId, n) {
+    const cards = getLeafCardsInRowOrder(barrierId);
+    if (cards.some((c) => idNumber(c) !== null)) return cards.find((c) => idNumber(c) === n) || null;
+    return cards[n - 1] || null; // ids without numbers: fall back to the order on screen
+  }
+
+  // Alt+digits: the digits typed while Alt/Option is held; released Alt links (or unlinks) that number.
+  let linkNumberChord = "";
+  document.addEventListener("keyup", (evt) => {
+    if (evt.key !== "Alt" || !linkNumberChord) return;
+    const n = Number(linkNumberChord);
+    linkNumberChord = "";
+    if (ui.activeBarrierId) {
+      const cardState = findLinkTargetByNumber(ui.activeBarrierId, n);
+      const cardEl = cardState && document.getElementById(cardState.domId);
+      if (cardEl) toggleProtection(cardEl);
+      else showStatus(`No cause or consequence with number ${n}`, "warning");
+    }
+    updateLinkBar();
+  });
+  window.addEventListener("blur", () => { if (linkNumberChord) { linkNumberChord = ""; updateLinkBar(); } });
+
+  /** The bar next to the Add buttons: the ids of what the selected barrier protects (ids, not row numbers). */
+  function updateLinkBar() {
+    const bar = document.getElementById("linkBar");
+    if (!bar) return;
+    const barrier = getActiveBarrierState();
+    if (!barrier) { bar.textContent = ""; bar.style.visibility = "hidden"; return; }
+    const cards = getLeafCardsInRowOrder(barrier.barrierId);
+    const ids = cards.filter((c) => barrier.protects.includes(c.idTagId)).map((c) => c.id);
+    const side = barrierSide(barrier.barrierId);
+    const what = side === "left" ? "causes" : "consequences";
+    const hint = side === "left" ? "Alt+digits link a cause by number" : "Alt+digits link a consequence by number";
+    bar.textContent = `${barrier.id} protects ${what}: ${ids.length ? ids.join(", ") : "none"}` +
+      (linkNumberChord ? `  ·  Alt+${linkNumberChord.split("").join("+")} → ${Number(linkNumberChord)}` : `  ·  ${hint}`);
+    bar.style.visibility = "visible";
   }
 
   function getLeafCardsInRowOrder(barrierId) {
@@ -3283,7 +3335,7 @@
     if (ui.activeBarrierId || !ui.selectedBarrierIds.size) return;
     if (document.activeElement && document.activeElement.isContentEditable) return;
     if (evt.metaKey || evt.ctrlKey) return;
-    if (evt.altKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
+    if (!evt.shiftKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
       evt.preventDefault();
       evt.stopImmediatePropagation();
       moveBarriers([...ui.selectedBarrierIds], evt.key === "ArrowLeft" ? -1 : 1);
@@ -3310,30 +3362,34 @@
       return;
     }
 
-    if (evt.altKey && !evt.metaKey && !evt.ctrlKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
+    // Alt/Option held while digits are typed builds a number (Alt+1+2, release Alt, links number 12); see the keyup below.
+    const digit = evt.altKey && !evt.metaKey && !evt.ctrlKey ? /^(?:Digit|Numpad)(\d)$/.exec(evt.code) : null;
+    if (digit) {
       evt.preventDefault();
       evt.stopImmediatePropagation();
-      moveBarrierColumn(ui.activeBarrierId, evt.key === "ArrowLeft" ? -1 : 1); // Alt/Option+arrow moves (5.6)
+      linkNumberChord += digit[1];
+      updateLinkBar();
+      return;
+    }
+
+    // A selected barrier moves along the only direction it can: left or right (Alt/Option+arrow does the same).
+    if (!evt.metaKey && !evt.ctrlKey && !evt.shiftKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      moveBarrierColumn(ui.activeBarrierId, evt.key === "ArrowLeft" ? -1 : 1);
       return;
     }
 
     if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
 
     if (/^[1-9]$/.test(evt.key)) {
-      const cards = getLeafCardsInRowOrder(ui.activeBarrierId);
-      const cardState = cards[Number(evt.key) - 1];
+      const cardState = findLinkTargetByNumber(ui.activeBarrierId, Number(evt.key));
       if (cardState) {
         evt.preventDefault();
         evt.stopImmediatePropagation();
         const cardEl = document.getElementById(cardState.domId);
         if (cardEl) toggleProtection(cardEl);
       }
-      return;
-    }
-
-    if (evt.key === "ArrowLeft" || evt.key === "ArrowRight") {
-      evt.preventDefault(); // plain arrows never move an object (5.6)
-      evt.stopImmediatePropagation();
       return;
     }
 
@@ -3359,10 +3415,11 @@
     const arrowKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
     if (!arrowKeys.includes(evt.key)) return;
 
+    // A selected cause or consequence moves up and down (with or without Alt/Option); it cannot move sideways.
     if (
-      evt.altKey &&
       !evt.metaKey &&
       !evt.ctrlKey &&
+      !evt.shiftKey &&
       (evt.key === "ArrowUp" || evt.key === "ArrowDown") &&
       selectedFocusDomId &&
       findCardByDomId(selectedFocusDomId) &&
@@ -3389,8 +3446,13 @@
       return;
     }
 
-    if (evt.altKey && !evt.metaKey && !evt.ctrlKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
-      evt.preventDefault(); // the browser's Alt+←/→ history is stopped in the diagram
+    if (
+      !evt.metaKey && !evt.ctrlKey && !evt.shiftKey &&
+      (evt.key === "ArrowLeft" || evt.key === "ArrowRight") &&
+      (evt.altKey || (selectedFocusDomId && findCardByDomId(selectedFocusDomId) && ui.selectedIds.size <= 1))
+    ) {
+      evt.preventDefault(); // the browser's Alt+←/→ history is stopped in the diagram; a selected card cannot move sideways
+      evt.stopImmediatePropagation();
       return;
     }
 
@@ -3405,9 +3467,10 @@
     if (evt.shiftKey && evt.target.closest(".barrier")) evt.preventDefault(); // no text selection on Shift+click
     const cardEl = evt.target.closest(".card");
     if (cardEl && cardEl.classList.contains("link-target")) evt.preventDefault();
-    if (isModClick(evt) && evt.target.closest(".id-tag, .desc-text")) {
-      evt.preventDefault();
-    }
+    // A click on a block selects the block, not its text (as in STPA): the mouse does not put a caret in a text that is not
+    // being edited; Enter does that. While a text is edited, a click inside it moves the caret as usual.
+    const field = evt.target.closest(".id-tag, .desc-text");
+    if (field && field !== document.activeElement) evt.preventDefault();
   });
 
   // The mouse sets the indication on the object under it (a real movement only: a scroll under a still pointer does not).
@@ -3424,9 +3487,13 @@
   bowtie.addEventListener("mouseleave", () => { if (!ui.activeBarrierId) clearKeyboardHover(); });
 
   document.addEventListener("click", (evt) => {
+    const clickedField = evt.target.closest(".id-tag, .desc-text");
+    if (clickedField && clickedField === document.activeElement) return; // a click in the text being edited
+    const editing = document.activeElement;
+    if (editing && editing.isContentEditable && !editing.contains(evt.target)) editing.blur(); // a click elsewhere applies the edit
     const mod = isModClick(evt);
     const barrierEl = evt.target.closest(".barrier");
-    if (evt.shiftKey && barrierEl && !evt.target.closest(".id-tag, .desc-text")) {
+    if (evt.shiftKey && barrierEl) {
       evt.preventDefault();
       toggleBarrierSelection(barrierEl.dataset.barrierId);
       return;
@@ -3460,25 +3527,23 @@
       }
     }
 
-    if (barrierEl && !evt.target.closest(".id-tag, .desc-text")) {
+    if (barrierEl) {
       enterLinkMode(barrierEl.dataset.barrierId);
       return;
     }
 
-    if (cardEl && !ui.activeBarrierId && !evt.target.closest(".id-tag, .desc-text")) {
+    if (cardEl && !ui.activeBarrierId) {
       selectComponent(cardEl);
       return;
     }
 
-    if (topEventEl && !ui.activeBarrierId && !evt.target.closest(".desc-text")) {
-      evt.preventDefault();
-      beginFieldEdit(topEventEl, "description");
+    if (topEventEl && !ui.activeBarrierId) {
+      selectComponent(topEventEl);
       return;
     }
 
-    if (hazardEl && !ui.activeBarrierId && !evt.target.closest(".desc-text")) {
-      evt.preventDefault();
-      beginFieldEdit(hazardEl, "description");
+    if (hazardEl && !ui.activeBarrierId) {
+      selectComponent(hazardEl);
       return;
     }
 
