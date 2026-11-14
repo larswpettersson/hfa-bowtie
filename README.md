@@ -43,6 +43,9 @@ The editor also runs fully offline. [`Bowtie_offline.html`](https://larswpetters
   - `L` - Light mode
   - `D` - Dark mode
   - `A` - AI analysis panel
+  - `Ctrl/⌘+Z` - Undo (also the **Undo** button)
+  - `Ctrl/⌘+Shift+Z` or `Ctrl+Y` - Redo
+- **Undo and redo**: every change is a step, as in HTA and the STPA workbench (up to 100 steps). **New** and a proposal applied from the AI panel can be undone; opening a file starts a new history. In a text field Ctrl/⌘+Z is the field's own undo
 - **Inline Editing**: Click any node to edit text inline
 - **Barrier Mapping**: Select barriers and click causes/consequences to reassign coverage
 - **Several barriers**: Shift+click barriers to select several (as in the STPA workbench) and move them together with Alt/Option + ← / →; Esc clears the selection

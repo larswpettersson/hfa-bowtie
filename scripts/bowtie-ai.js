@@ -220,7 +220,7 @@ For a complete bowtie give the compact form without "patch".`;
     if (Array.isArray(obj.causes) || Array.isArray(obj.consequences)) {
       const n = (k) => (Array.isArray(obj[k]) ? obj[k].length : 0);
       return { title: `Bowtie · ${n("causes")} causes, ${n("preventiveBarriers") + n("reactiveBarriers")} barriers, ${n("consequences")} consequences`,
-        applyLabel: "Load into diagram", confirm: "Replace the diagram with this bowtie? (Revert restores the current one; Export first to keep a copy.)" };
+        applyLabel: "Load into diagram", confirm: "Replace the diagram with this bowtie? (Ctrl/⌘+Z undoes it.)" };
     }
     return null;
   }
@@ -231,10 +231,10 @@ For a complete bowtie give the compact form without "patch".`;
       const { compact, stats } = applyPatch(cur, obj);
       editor.replaceState(toState(compact, cur));
       const dropped = stats.dropped.length ? ` (${stats.dropped.join(", ")} only guarded removed paths and went too)` : "";
-      return `Patch applied: ${stats.added} added, ${stats.changed} changed, ${stats.removed} removed${dropped}.`;
+      return `Patch applied: ${stats.added} added, ${stats.changed} changed, ${stats.removed} removed${dropped}. Ctrl/⌘+Z undoes it.`;
     }
     editor.replaceState(toState(obj, cur));
-    return "Bowtie loaded.";
+    return "Bowtie loaded. Ctrl/⌘+Z undoes it.";
   }
 
   window.BowtieAssist = HFAAssist.mount({

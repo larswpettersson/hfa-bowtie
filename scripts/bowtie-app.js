@@ -722,7 +722,65 @@
     return normalizeImportedState(parsed);
   }
 
-  function applyState(nextState) {
+  // ---------- Undo and redo (as in HTA and STPA: Ctrl/⌘+Z, Ctrl/⌘+Shift+Z, Ctrl+Y) ----------
+
+  const HISTORY_LIMIT = 100;
+  let stateHistory = [];
+  let stateHistoryIndex = -1;
+  let isUndoRedo = false;
+
+  /** The diagram as text; the theme is a preference and is not part of a step. */
+  function snapshotState() {
+    const s = serializeState();
+    delete s.meta.theme;
+    return JSON.stringify(s);
+  }
+
+  function resetStateHistory() {
+    stateHistory = state ? [snapshotState()] : [];
+    stateHistoryIndex = stateHistory.length - 1;
+  }
+
+  /** One step per committed change. Link mode is one step: it is recorded when it is applied or cancelled. */
+  function recordStateHistory() {
+    if (isUndoRedo || !state || ui.activeBarrierId) return;
+    const snap = snapshotState();
+    if (stateHistory[stateHistoryIndex] === snap) return;
+    stateHistory = stateHistory.slice(0, stateHistoryIndex + 1);
+    stateHistory.push(snap);
+    stateHistoryIndex = stateHistory.length - 1;
+    if (stateHistory.length > HISTORY_LIMIT) {
+      stateHistory.shift();
+      stateHistoryIndex -= 1;
+    }
+  }
+
+  function stepStateHistory(by) {
+    if (ui.activeBarrierId) applyLinkMode(); // finish the links first, so that they are a step of their own
+    const to = stateHistoryIndex + by;
+    if (to < 0 || to >= stateHistory.length) {
+      showStatus(by < 0 ? "Nothing to undo" : "Nothing to redo", "warning");
+      return;
+    }
+    // A step is the editor's own state, so it is restored as it is (normalising it would mark it as changed).
+    const next = JSON.parse(stateHistory[to]);
+    next.meta.theme = state.meta.theme;
+    isUndoRedo = true;
+    try {
+      stateHistoryIndex = to;
+      applyState(next);
+    } finally {
+      isUndoRedo = false;
+    }
+    showStatus(by < 0 ? "Undo" : "Redo");
+  }
+
+  const undo = () => stepStateHistory(-1);
+  const redo = () => stepStateHistory(1);
+
+  /** Show a diagram. Opening a file starts a new history; `record` adds the change as a step instead
+      (New, the AI panel), so that Ctrl/⌘+Z brings the previous diagram back. */
+  function applyState(nextState, { record = false } = {}) {
     clearLinkModeUI(ui.activeBarrierId);
     editSession = null;
     clearComponentSelection();
@@ -735,6 +793,9 @@
     buildConnectors();
     updateTabOrder();
     fitAllBarrierDescriptions();
+    if (isUndoRedo) return;
+    if (record) recordStateHistory();
+    else resetStateHistory();
   }
 
   function loadState(input) {
@@ -847,22 +908,22 @@
     };
   }
 
-  /** New: replaces the diagram with the example after asking, and clears the AI conversation. Bowtie has no undo,
-      so the question says so. */
+  /** New: replaces the diagram with the example after asking; Ctrl/⌘+Z undoes it. Clears the AI conversation. */
   async function newDiagram() {
     if (hasUnsavedChanges()) {
-      if (!(await askAboutUnsaved("New replaces the diagram with a small example; this cannot be undone."))) return;
+      if (!(await askAboutUnsaved("New replaces the diagram with a small example."))) return;
     } else {
       const answer = await choose({
         title: "New diagram",
-        message: "Replace the diagram with a small example that shows the whole structure?",
+        message: "Replace the diagram with a small example that shows the whole structure? Ctrl/⌘+Z undoes it.",
         buttons: [["cancel", "Cancel"], ["new", "New"]],
       });
       if (answer !== "new") return;
     }
-    applyState(deserializeState(exampleDiagram()));
+    applyState(deserializeState(exampleDiagram()), { record: true });
     markSaved();
     window.BowtieAssist?.clear?.();
+    showStatus("New diagram: a small example. Ctrl/⌘+Z undoes it.");
   }
 
   function importStateFromFile(file) {
@@ -1618,6 +1679,7 @@
     validateState(state);
     render(state);
     buildConnectors();
+    recordStateHistory();
   }
 
   /** Rows a barrier covers: from what it protects once linked, else from its authored segments. */
@@ -2318,6 +2380,7 @@
     exportState: exportStateToFile,
     importState: () => openFile(),
     newDiagram: () => newDiagram(),
+    undo,
     toggleHelp: () => {
       const dlg = document.getElementById("help-dialog");
       if (!dlg) return;
@@ -2373,6 +2436,20 @@
       if (!ui.activeBarrierId) return;
       applyLegendRow(ui.activeBarrierId, row);
     });
+  });
+
+  // Undo / redo (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, Cmd/Ctrl+Y). A text field keeps the browser's own undo.
+  document.addEventListener("keydown", (evt) => {
+    if (!(evt.metaKey || evt.ctrlKey) || evt.altKey) return;
+    const key = evt.key.toLowerCase();
+    if (key !== "z" && key !== "y") return;
+    const active = document.activeElement;
+    if (active && (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))) return;
+    if (document.querySelector("dialog[open]")) return;
+    evt.preventDefault();
+    evt.stopImmediatePropagation();
+    if (key === "y" || evt.shiftKey) redo();
+    else undo();
   });
 
   // Selected barriers (Shift+click): Alt/Option+←/→ move them together (5.6), Esc clears the selection.
@@ -2773,19 +2850,23 @@
   render(state);
   buildConnectors();
   markSaved();
+  resetStateHistory();
 
-  /** Replace the diagram (used by the AI panel); keeps the current theme, throws on validation errors. */
+  /** Replace the diagram (used by the AI panel); keeps the current theme, throws on validation errors.
+      Ctrl/⌘+Z undoes it. */
   function replaceState(raw) {
     const next = normalizeImportedState(raw);
     next.meta.theme = state.meta.theme;
     const { errors } = validateImportState(next);
     if (errors.length) throw new Error(formatImportValidationMessage(errors, []));
-    applyState(next);
+    applyState(next, { record: true });
   }
 
   window.BowtieEditor = {
     getState: () => serializeState(),
     replaceState,
+    undo,
+    redo,
     // Selected cards / hazard / top event (dom ids) and the barrier in link mode.
     getSelection: () => ({ ids: [...ui.selectedIds], barrierId: ui.activeBarrierId, barrierIds: [...ui.selectedBarrierIds] }),
     hasUnsavedChanges,
