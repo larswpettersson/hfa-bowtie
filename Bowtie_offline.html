@@ -95,6 +95,7 @@
     .panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; }
     .panel-head h2 { margin: 0 8px 0 0; font-size: 16px; font-weight: 600; }
     .link-bar { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: var(--color-foreground-muted); }
+    .cap-tip { position: fixed; z-index: 1000; max-width: min(360px, calc(100vw - 16px)); padding: 8px 12px; border-radius: 4px; font-size: 14px; line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere; pointer-events: none; background: var(--color-foreground); color: var(--color-background-elevated); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
     .panel-body { display: flex; gap: 16px; flex: 1 1 auto; min-height: 0; }
 
     /* Matches Penpot "Bowtie Application": Toolbar sibling above Bowtie example;
@@ -2044,6 +2045,43 @@
       el.classList.add("is-keyboard-hover");
     }
   }
+
+  /* Tooltip for a capped text (design principle 5.11): while an object whose text ends with "..." is indicated, by the mouse or
+     by the arrow keys, the full text is shown next to it. Enter (the text editing mode) removes it until the indication moves. */
+  const capTip = document.createElement("div");
+  capTip.className = "cap-tip";
+  capTip.setAttribute("role", "tooltip");
+  capTip.hidden = true;
+  document.body.appendChild(capTip);
+  let capTipOwner = null;
+  let capTipDismissed = null; // the object whose tooltip Enter removed
+
+  function hideCapTip() { capTip.hidden = true; }
+
+  function updateCapTip() {
+    const el = getKeyboardHoverEl();
+    if (!el || document.activeElement?.isContentEditable || el === capTipDismissed) { hideCapTip(); if (!el) { capTipOwner = null; capTipDismissed = null; } return; }
+    if (el !== capTipOwner) capTipDismissed = null;
+    capTipOwner = el;
+    const desc = el.querySelector('[data-role="description"]');
+    const full = desc?.dataset.full || "";
+    if (!desc || !full || desc.textContent === full) { hideCapTip(); return; }
+    capTip.textContent = full;
+    capTip.hidden = false;
+    const r = el.getBoundingClientRect();
+    const w = capTip.offsetWidth, h = capTip.offsetHeight;
+    const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left));
+    const below = r.bottom + 6;
+    capTip.style.left = `${left}px`;
+    capTip.style.top = `${below + h > window.innerHeight - 8 ? Math.max(8, r.top - h - 6) : below}px`;
+  }
+
+  new MutationObserver(updateCapTip).observe(bowtie, { subtree: true, attributes: true, attributeFilter: ["class"] });
+  document.addEventListener("keydown", (evt) => {
+    if (evt.key === "Enter" && !capTip.hidden) { capTipDismissed = capTipOwner; hideCapTip(); }
+  }, true);
+  document.addEventListener("focusin", () => { if (document.activeElement?.isContentEditable) hideCapTip(); });
+  bowtieWrap?.addEventListener("scroll", updateCapTip);
 
   /** Every object an arrow can reach, with its on-screen rectangle (a barrier: all its segments together). */
   function navigableObjects() {

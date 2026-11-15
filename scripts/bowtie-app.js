@@ -1210,6 +1210,43 @@
     }
   }
 
+  /* Tooltip for a capped text (design principle 5.11): while an object whose text ends with "..." is indicated, by the mouse or
+     by the arrow keys, the full text is shown next to it. Enter (the text editing mode) removes it until the indication moves. */
+  const capTip = document.createElement("div");
+  capTip.className = "cap-tip";
+  capTip.setAttribute("role", "tooltip");
+  capTip.hidden = true;
+  document.body.appendChild(capTip);
+  let capTipOwner = null;
+  let capTipDismissed = null; // the object whose tooltip Enter removed
+
+  function hideCapTip() { capTip.hidden = true; }
+
+  function updateCapTip() {
+    const el = getKeyboardHoverEl();
+    if (!el || document.activeElement?.isContentEditable || el === capTipDismissed) { hideCapTip(); if (!el) { capTipOwner = null; capTipDismissed = null; } return; }
+    if (el !== capTipOwner) capTipDismissed = null;
+    capTipOwner = el;
+    const desc = el.querySelector('[data-role="description"]');
+    const full = desc?.dataset.full || "";
+    if (!desc || !full || desc.textContent === full) { hideCapTip(); return; }
+    capTip.textContent = full;
+    capTip.hidden = false;
+    const r = el.getBoundingClientRect();
+    const w = capTip.offsetWidth, h = capTip.offsetHeight;
+    const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left));
+    const below = r.bottom + 6;
+    capTip.style.left = `${left}px`;
+    capTip.style.top = `${below + h > window.innerHeight - 8 ? Math.max(8, r.top - h - 6) : below}px`;
+  }
+
+  new MutationObserver(updateCapTip).observe(bowtie, { subtree: true, attributes: true, attributeFilter: ["class"] });
+  document.addEventListener("keydown", (evt) => {
+    if (evt.key === "Enter" && !capTip.hidden) { capTipDismissed = capTipOwner; hideCapTip(); }
+  }, true);
+  document.addEventListener("focusin", () => { if (document.activeElement?.isContentEditable) hideCapTip(); });
+  bowtieWrap?.addEventListener("scroll", updateCapTip);
+
   /** Every object an arrow can reach, with its on-screen rectangle (a barrier: all its segments together). */
   function navigableObjects() {
     const out = [];
