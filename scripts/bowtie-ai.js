@@ -37,6 +37,7 @@ Data model (compact form of the diagram):
   "reactiveBarriers":   [{"id": "R1", "description": "…", "protects": ["K1"], "strength": "Strong", "status": "Unknown"}] }
 Causes and consequences are listed top to bottom. Preventive barriers are listed from the causes toward the top event; reactive (recovery) barriers from the top event toward the consequences. "protects" lists the cause ids (preventive) or consequence ids (reactive) whose path the barrier sits on.
 strength is one of ${STRENGTHS.join(", ")}; status is one of ${STATUSES.join(", ")}.
+Every label and description is at most 300 characters (the editor stops typing there and warns from 240); keep them short and put the details in another document that the text refers to.
 
 Changing the diagram: unless the user explicitly asks for the complete bowtie, do NOT repeat unchanged elements. Return one \`\`\`json block that is a patch:
 {"patch": true, "topEvent": {"label": "…"},

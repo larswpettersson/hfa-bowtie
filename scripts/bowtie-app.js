@@ -336,6 +336,17 @@
 
     const topEventIdTag = s.topEvent?.id ? `id-${s.topEvent.id}` : null;
 
+    // Texts over the limit are kept (nothing is cut on opening), but the user is told, as when typing.
+    const longText = (path, text) => {
+      if (typeof text === "string" && text.length > MAX_TEXT_CHARS) {
+        pushWarning(path, `The text is ${text.length} characters; the longest text is ${MAX_TEXT_CHARS}.`, "Shorten it and refer to another document for the details.");
+      }
+    };
+    longText("hazard.label", s.hazard?.label);
+    longText("topEvent.label", s.topEvent?.label);
+    [["left.causes", s.left?.causes], ["right.consequences", s.right?.consequences], ["left.barriers", s.left?.barriers], ["right.barriers", s.right?.barriers]]
+      .forEach(([name, list]) => (list || []).forEach((x, i) => longText(`${name}[${i}] (${x.id || "?"}).description`, x.description)));
+
     s.left.causes.forEach((c, index) => {
       const path = `left.causes[${index}]`;
       if (!c.id) pushError(`${path}.id`, "Cause missing id.", "Add a unique id such as C1.");
@@ -807,8 +818,19 @@
     applyState(deserializeState(input));
   }
 
+  /* "$comment" at the top of a saved file (design principles 4.15): the format and its limits, for a person or an AI that
+     writes the file without knowing the tool. It is ignored when the file is opened. */
+  const FORMAT_NOTE = [
+    "HFA Bowtie diagram, version 1. This $comment is ignored when the file is opened.",
+    `Texts: hazard.label, topEvent.label and every description are at most ${MAX_TEXT_CHARS} characters; the tool warns from ${WARN_TEXT_CHARS}. Put longer explanations in another document and refer to it. On screen a text shows its first ${MAX_VISIBLE_CHARS} characters followed by "..."; the whole text is kept.`,
+    "Ids: causes C1, C2 …, consequences K1, K2 …, preventive barriers P1 …, reactive barriers R1 …; unique. The number in the id is what the link keys use (C12 is 12).",
+    "left.causes and right.consequences: row is 1..left.rows (right.rows for consequences); domId is c-<id>, idTagId is id-<id>, connectorTarget is id-<topEvent.id>.",
+    "Barriers: barrierId is the id in lower case. col is the grid column: preventive barriers 2..left.barrierCols+1 (column 1 holds the causes), reactive barriers 1..right.barrierCols (the consequences come after). protects lists the idTagId of the causes or consequences the barrier protects, on its own side. everLinked and authoredSegments are layout state written by the tool; copy them as they are.",
+    'Barrier strength: "Normal", "Strong" or "Weak". Status: "Implemented", "Partly Implemented", "Not Implemented", "To be implemented" or "Unknown".',
+  ];
+
   function exportStateToFile() {
-    const json = JSON.stringify(serializeState(), null, 2);
+    const json = JSON.stringify({ $comment: FORMAT_NOTE, ...serializeState() }, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -1195,7 +1217,7 @@
      with aria-describedby while it is shown. It shows on mouse hover and on keyboard indication, and is dismissed by Esc, by
      Enter (the text editing mode) and by moving on. It is not repositioned on scroll or resize; it simply goes away.
      What it shows: the text in data-tip on any element (a generic hook for every tool), or else the full text of a block whose
-     visible text is capped with "...". A tip is never longer than MAX_TEXT_CHARS, which is also the longest text a block takes. */
+     visible text is capped with "...". Its height is capped; a longer text scrolls inside it, and the pointer can rest on it. */
   const capTip = document.createElement("div");
   capTip.className = "cap-tip";
   capTip.id = "hfaTooltip";
@@ -1215,39 +1237,70 @@
     return full && desc.textContent !== full ? full : "";
   }
 
+  // aria-describedby may already name other descriptions; only the tooltip's own id is added and removed.
+  function describedBy(el, add) {
+    const ids = (el.getAttribute("aria-describedby") || "").split(/\s+/).filter((t) => t && t !== capTip.id);
+    if (add) ids.push(capTip.id);
+    if (ids.length) el.setAttribute("aria-describedby", ids.join(" ")); else el.removeAttribute("aria-describedby");
+  }
+
+  let hideTimer = null;
   function hideTip() {
-    if (tipOwner) tipOwner.removeAttribute("aria-describedby");
+    clearTimeout(hideTimer);
+    if (tipOwner) describedBy(tipOwner, false);
     tipOwner = null;
     capTip.hidden = true;
   }
 
-  function showTip(el) {
+  // A tooltip shown by the mouse can be hovered and scrolled. One shown by the keyboard lets the pointer through: it may appear
+  // under a resting pointer, and must not make the pointer seem to leave the object it was on.
+  function showTip(el, { byMouse = false } = {}) {
     if (document.activeElement?.isContentEditable) { hideTip(); return; }
     if (el === tipDismissed) return;
     const text = tipTextFor(el);
     if (!text) { hideTip(); return; }
-    if (tipOwner && tipOwner !== el) tipOwner.removeAttribute("aria-describedby");
+    if (tipOwner && tipOwner !== el) describedBy(tipOwner, false);
     tipOwner = el;
-    el.setAttribute("aria-describedby", capTip.id);
-    capTip.textContent = text.length > MAX_TEXT_CHARS ? text.slice(0, MAX_TEXT_CHARS) + "..." : text;
+    describedBy(el, true);
+    capTip.textContent = text; // always the whole text; a long one scrolls inside the tooltip (its height is capped in CSS)
+    capTip.scrollTop = 0;
+    capTip.classList.toggle("is-passive", !byMouse);
     capTip.hidden = false;
+    // Below the object, else above, else beside it; never on top of it.
     const r = el.getBoundingClientRect();
-    const w = capTip.offsetWidth, h = capTip.offsetHeight;
-    capTip.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.left))}px`;
-    const below = r.bottom + 6;
-    capTip.style.top = `${below + h > window.innerHeight - 8 ? Math.max(8, r.top - h - 6) : below}px`;
+    const w = capTip.offsetWidth, h = capTip.offsetHeight, W = window.innerWidth, H = window.innerHeight, gap = 6;
+    const clampX = (x) => Math.max(8, Math.min(W - w - 8, x));
+    const clampY = (y) => Math.max(8, Math.min(H - h - 8, y));
+    let x, y;
+    if (r.bottom + gap + h <= H - 8) { x = clampX(r.left); y = r.bottom + gap; }
+    else if (r.top - gap - h >= 8) { x = clampX(r.left); y = r.top - gap - h; }
+    else if (r.right + gap + w <= W - 8) { x = r.right + gap; y = clampY(r.top); }
+    else if (r.left - gap - w >= 8) { x = r.left - gap - w; y = clampY(r.top); }
+    else { x = clampX(r.left); y = 8; }
+    capTip.style.left = `${x}px`;
+    capTip.style.top = `${y}px`;
   }
+
+  // Leaving the object or the tooltip hides it after a short moment, so that the pointer can cross the gap between them.
+  function hideSoon() { clearTimeout(hideTimer); hideTimer = setTimeout(hideTip, 200); }
+  function keepTip() { clearTimeout(hideTimer); }
 
   // The mouse: independent of the indication, so it also works in link mode.
   document.addEventListener("mouseover", (evt) => {
+    if (capTip.contains(evt.target)) { keepTip(); return; } // the pointer may rest on the tooltip, to read or scroll it
     const el = evt.target.closest?.(TIP_SELECTOR);
+    if (el && el === tipOwner) { keepTip(); return; }
     if (el !== tipDismissed) tipDismissed = null;
-    if (el) showTip(el); else hideTip();
+    if (el) showTip(el, { byMouse: true }); else if (tipOwner) hideSoon();
   });
   document.addEventListener("mouseout", (evt) => {
     const el = evt.target.closest?.(TIP_SELECTOR);
-    if (el && !el.contains(evt.relatedTarget)) { if (el === tipOwner) hideTip(); if (el === tipDismissed) tipDismissed = null; }
+    if (el && !el.contains(evt.relatedTarget)) {
+      if (el === tipOwner && !capTip.contains(evt.relatedTarget)) hideSoon();
+      if (el === tipDismissed) tipDismissed = null;
+    }
   });
+  capTip.addEventListener("mouseleave", (evt) => { if (!tipOwner?.contains(evt.relatedTarget)) hideSoon(); });
   // The keyboard: the indicated object (a plain arrow, or ↑/↓ among the link targets), and a focused [data-tip] element.
   new MutationObserver(() => {
     const el = getKeyboardHoverEl();
@@ -1258,11 +1311,12 @@
     if (document.activeElement?.isContentEditable) hideTip();
     else if (evt.target.matches?.("[data-tip]")) showTip(evt.target);
   });
+  document.addEventListener("focusout", (evt) => { if (evt.target === tipOwner) hideTip(); });
   document.addEventListener("keydown", (evt) => {
     if ((evt.key === "Enter" || evt.key === "Escape") && tipOwner) { tipDismissed = tipOwner; hideTip(); }
   }, true);
   window.addEventListener("resize", hideTip);
-  document.addEventListener("scroll", hideTip, true);
+  document.addEventListener("scroll", (evt) => { if (evt.target !== capTip) hideTip(); }, true);
 
   /** Every object an arrow can reach, with its on-screen rectangle (a barrier: all its segments together). */
   function navigableObjects() {
@@ -2729,7 +2783,10 @@
     if (el === getKeyboardHoverEl() || (el?.classList.contains("barrier") && el.classList.contains("is-keyboard-hover"))) return;
     setIndicated(el);
   });
-  bowtie.addEventListener("mouseleave", () => { if (!ui.activeBarrierId) clearKeyboardHover(); });
+  bowtie.addEventListener("mouseleave", (evt) => {
+    if (evt.relatedTarget?.closest?.(".cap-tip")) return; // onto the tooltip: the pointer is still with the object
+    if (!ui.activeBarrierId) clearKeyboardHover();
+  });
 
   document.addEventListener("click", (evt) => {
     const clickedField = evt.target.closest(".id-tag, .desc-text");
@@ -3002,6 +3059,7 @@
 
   window.BowtieEditor = {
     getState: () => serializeState(),
+    formatNote: FORMAT_NOTE, // the "$comment" written at the top of a saved file
     replaceState,
     undo,
     redo,
