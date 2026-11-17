@@ -25,8 +25,18 @@
 
   // ---------- Text helpers ----------
 
+  // The viewable text of a block is capped at 100 characters; three dots show that it is capped. The full text is kept and shown while editing.
+  const MAX_VISIBLE_CHARS = 100;
+  // A block's text is at most MAX_TEXT_CHARS long; from WARN_TEXT_CHARS a warning recommends a reference to another document.
+  const MAX_TEXT_CHARS = 300;
+  const WARN_TEXT_CHARS = 240;
+  // ... and at 5 lines, so that a text of many short lines cannot make a block taller than the window.
+  const MAX_VISIBLE_LINES = 5;
   function truncateDescription(description) {
-    return description.length > 200 ? description.substring(0, 200) + "..." : description;
+    let shown = description.length > MAX_VISIBLE_CHARS ? description.substring(0, MAX_VISIBLE_CHARS) : description;
+    const lines = shown.split("\n");
+    if (lines.length > MAX_VISIBLE_LINES) shown = lines.slice(0, MAX_VISIBLE_LINES).join("\n");
+    return shown === description ? description : shown.trimEnd() + "...";
   }
 
   function readEditableText(el) {
@@ -54,11 +64,11 @@
     let hi = capped.length;
     while (lo < hi) {
       const mid = Math.ceil((lo + hi) / 2);
-      writeEditableText(el, capped.slice(0, mid).trimEnd() + "…");
+      writeEditableText(el, capped.slice(0, mid).trimEnd() + "...");
       if (el.scrollHeight <= el.clientHeight + 1) lo = mid;
       else hi = mid - 1;
     }
-    writeEditableText(el, lo > 0 ? capped.slice(0, lo).trimEnd() + "…" : "…");
+    writeEditableText(el, lo > 0 ? capped.slice(0, lo).trimEnd() + "..." : "...");
   }
 
   function fitAllBarrierDescriptions() {
@@ -330,6 +340,17 @@
     }
 
     const topEventIdTag = s.topEvent?.id ? `id-${s.topEvent.id}` : null;
+
+    // Texts over the limit are kept (nothing is cut on opening), but the user is told, as when typing.
+    const longText = (path, text) => {
+      if (typeof text === "string" && text.length > MAX_TEXT_CHARS) {
+        pushWarning(path, `The text is ${text.length} characters; the longest text is ${MAX_TEXT_CHARS}.`, "Shorten it and refer to another document for the details.");
+      }
+    };
+    longText("hazard.label", s.hazard?.label);
+    longText("topEvent.label", s.topEvent?.label);
+    [["left.causes", s.left?.causes], ["right.consequences", s.right?.consequences], ["left.barriers", s.left?.barriers], ["right.barriers", s.right?.barriers]]
+      .forEach(([name, list]) => (list || []).forEach((x, i) => longText(`${name}[${i}] (${x.id || "?"}).description`, x.description)));
 
     s.left.causes.forEach((c, index) => {
       const path = `left.causes[${index}]`;
@@ -802,8 +823,19 @@
     applyState(deserializeState(input));
   }
 
+  /* "$comment" at the top of a saved file (design principles 4.15): the format and its limits, for a person or an AI that
+     writes the file without knowing the tool. It is ignored when the file is opened. */
+  const FORMAT_NOTE = [
+    "HFA Bowtie diagram, version 1. This $comment is ignored when the file is opened.",
+    `Texts: hazard.label, topEvent.label and every description are at most ${MAX_TEXT_CHARS} characters; the tool warns from ${WARN_TEXT_CHARS}. Put longer explanations in another document and refer to it. On screen a text shows at most its first ${MAX_VISIBLE_CHARS} characters and ${MAX_VISIBLE_LINES} lines, followed by "..."; the whole text is kept.`,
+    "Ids: causes C1, C2 …, consequences K1, K2 …, preventive barriers P1 …, reactive barriers R1 …; unique. The number in the id is what the link keys use (C12 is 12).",
+    "left.causes and right.consequences: row is 1..left.rows (right.rows for consequences); domId is c-<id>, idTagId is id-<id>, connectorTarget is id-<topEvent.id>.",
+    "Barriers: barrierId is the id in lower case. col is the grid column: preventive barriers 2..left.barrierCols+1 (column 1 holds the causes), reactive barriers 1..right.barrierCols (the consequences come after). protects lists the idTagId of the causes or consequences the barrier protects, on its own side. everLinked and authoredSegments are layout state written by the tool; copy them as they are.",
+    'Barrier strength: "Normal", "Strong" or "Weak". Status: "Implemented", "Partly Implemented", "Not Implemented", "To be implemented" or "Unknown".',
+  ];
+
   function exportStateToFile() {
-    const json = JSON.stringify(serializeState(), null, 2);
+    const json = JSON.stringify({ $comment: FORMAT_NOTE, ...serializeState() }, null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -1058,36 +1090,14 @@
     positionAllConnectors();
   }
 
+  // The reason for a blur (Enter, Esc, Tab) belongs to that one blur: it is cleared whether or not a session was open,
+  // so that it cannot decide how the next, unrelated blur is treated.
   function handleEditBlur(el) {
-    if (!editSession || editSession.el !== el) return;
-    if (blurNavigation === "cancel" || blurNavigation === "apply") {
-      blurNavigation = null;
-      return;
-    }
-
-    if (blurNavigation === "tab" && isEditContextSelected(el)) {
-      const related = document.activeElement;
-      const leaving = el.closest(".card, .barrier, .hazard, .top-event");
-      const entering = related?.closest?.(".card, .barrier, .hazard, .top-event");
-      const tabWithinSameComponent =
-        leaving &&
-        entering &&
-        domIdForComponent(leaving) === domIdForComponent(entering);
-
-      if (tabWithinSameComponent) {
-        const value = readEditableText(el);
-        if (el.classList.contains("desc-text")) el.dataset.full = value;
-        editSession.setValue(value);
-        editSession = null;
-      } else {
-        cancelEditSession();
-      }
-      blurNavigation = null;
-      return;
-    }
-
-    applyEditSession();
+    const reason = blurNavigation;
     blurNavigation = null;
+    if (!editSession || editSession.el !== el) return;
+    if (reason === "cancel" || reason === "apply") return;
+    applyEditSession(); // a click elsewhere and Tab both confirm the edit; nothing is lost silently
   }
 
   function finishEditingAfterApply(active) {
@@ -1116,7 +1126,7 @@
     });
   }
 
-  function beginFieldEdit(componentEl, role = "id") {
+  function beginFieldEdit(componentEl, role = "description") {
     if (!componentEl) return;
     const field = componentEl.querySelector(`[data-role="${role}"]`);
     if (!field) return;
@@ -1127,7 +1137,7 @@
 
   function focusBarrierIdField(barrierId) {
     const seg = getBarrierSegmentEls(barrierId)[0];
-    if (seg) beginFieldEdit(seg, "id");
+    if (seg) beginFieldEdit(seg, "description");
   }
 
   function getSelectedComponentEl() {
@@ -1207,6 +1217,111 @@
       el.classList.add("is-keyboard-hover");
     }
   }
+
+  /* Tooltip (design principle 5.11), built as the W3C ARIA tooltip pattern: a role="tooltip" element that the object points at
+     with aria-describedby while it is shown. It shows on mouse hover and on keyboard indication, and is dismissed by Esc, by
+     Enter (the text editing mode) and by moving on. It is not repositioned on scroll or resize; it simply goes away.
+     What it shows: the text in data-tip on any element (a generic hook for every tool), or else the full text of a block whose
+     visible text is capped with "...". Its height is capped; a longer text scrolls inside it, and the pointer can rest on it. */
+  const capTip = document.createElement("div");
+  capTip.className = "cap-tip";
+  capTip.id = "hfaTooltip";
+  capTip.setAttribute("role", "tooltip");
+  capTip.hidden = true;
+  document.body.appendChild(capTip);
+  let tipOwner = null;
+  let tipDismissed = null; // the object whose tooltip Esc or Enter removed; it stays away until the pointer or indication moves on
+
+  const TIP_SELECTOR = "[data-tip], .card, .barrier, .hazard, .top-event";
+
+  function tipTextFor(el) {
+    if (!el) return "";
+    if (el.dataset.tip) return el.dataset.tip;
+    const desc = el.querySelector?.('[data-role="description"]');
+    const full = desc?.dataset.full || "";
+    return full && desc.textContent !== full ? full : "";
+  }
+
+  // aria-describedby may already name other descriptions; only the tooltip's own id is added and removed.
+  function describedBy(el, add) {
+    const ids = (el.getAttribute("aria-describedby") || "").split(/\s+/).filter((t) => t && t !== capTip.id);
+    if (add) ids.push(capTip.id);
+    if (ids.length) el.setAttribute("aria-describedby", ids.join(" ")); else el.removeAttribute("aria-describedby");
+  }
+
+  let hideTimer = null;
+  function hideTip() {
+    clearTimeout(hideTimer);
+    if (tipOwner) describedBy(tipOwner, false);
+    tipOwner = null;
+    capTip.hidden = true;
+  }
+
+  // A tooltip shown by the mouse can be hovered and scrolled. One shown by the keyboard lets the pointer through: it may appear
+  // under a resting pointer, and must not make the pointer seem to leave the object it was on.
+  function showTip(el, { byMouse = false } = {}) {
+    if (document.activeElement?.isContentEditable) { hideTip(); return; }
+    if (el === tipDismissed) return;
+    const text = tipTextFor(el);
+    if (!text) { hideTip(); return; }
+    if (tipOwner && tipOwner !== el) describedBy(tipOwner, false);
+    tipOwner = el;
+    describedBy(el, true);
+    capTip.textContent = text; // always the whole text; a long one scrolls inside the tooltip (its height is capped in CSS)
+    capTip.scrollTop = 0;
+    capTip.classList.toggle("is-passive", !byMouse);
+    capTip.hidden = false;
+    // Below the object, else above, else beside it; never on top of it.
+    const r = el.getBoundingClientRect();
+    const w = capTip.offsetWidth, h = capTip.offsetHeight, W = window.innerWidth, H = window.innerHeight, gap = 6;
+    const clampX = (x) => Math.max(8, Math.min(W - w - 8, x));
+    const clampY = (y) => Math.max(8, Math.min(H - h - 8, y));
+    let x, y;
+    if (r.bottom + gap + h <= H - 8) { x = clampX(r.left); y = r.bottom + gap; }
+    else if (r.top - gap - h >= 8) { x = clampX(r.left); y = r.top - gap - h; }
+    else if (r.right + gap + w <= W - 8) { x = r.right + gap; y = clampY(r.top); }
+    else if (r.left - gap - w >= 8) { x = r.left - gap - w; y = clampY(r.top); }
+    else { x = clampX(r.left); y = 8; }
+    capTip.style.left = `${x}px`;
+    capTip.style.top = `${y}px`;
+  }
+
+  // Leaving the object or the tooltip hides it after a short moment, so that the pointer can cross the gap between them.
+  function hideSoon() { clearTimeout(hideTimer); hideTimer = setTimeout(hideTip, 200); }
+  function keepTip() { clearTimeout(hideTimer); }
+
+  // The mouse: independent of the indication, so it also works in link mode.
+  document.addEventListener("mouseover", (evt) => {
+    if (capTip.contains(evt.target)) { keepTip(); return; } // the pointer may rest on the tooltip, to read or scroll it
+    const el = evt.target.closest?.(TIP_SELECTOR);
+    if (el && el === tipOwner) { keepTip(); return; }
+    if (el !== tipDismissed) tipDismissed = null;
+    if (el) showTip(el, { byMouse: true }); else if (tipOwner) hideSoon();
+  });
+  document.addEventListener("mouseout", (evt) => {
+    const el = evt.target.closest?.(TIP_SELECTOR);
+    if (el && !el.contains(evt.relatedTarget)) {
+      if (el === tipOwner && !capTip.contains(evt.relatedTarget)) hideSoon();
+      if (el === tipDismissed) tipDismissed = null;
+    }
+  });
+  capTip.addEventListener("mouseleave", (evt) => { if (!tipOwner?.contains(evt.relatedTarget)) hideSoon(); });
+  // The keyboard: the indicated object (a plain arrow, or ↑/↓ among the link targets), and a focused [data-tip] element.
+  new MutationObserver(() => {
+    const el = getKeyboardHoverEl();
+    if (el !== tipDismissed) tipDismissed = null;
+    if (el) showTip(el); else if (tipOwner && !tipOwner.matches(":hover")) hideTip();
+  }).observe(bowtie, { subtree: true, attributes: true, attributeFilter: ["class"] });
+  document.addEventListener("focusin", (evt) => {
+    if (document.activeElement?.isContentEditable) hideTip();
+    else if (evt.target.matches?.("[data-tip]")) showTip(evt.target);
+  });
+  document.addEventListener("focusout", (evt) => { if (evt.target === tipOwner) hideTip(); });
+  document.addEventListener("keydown", (evt) => {
+    if ((evt.key === "Enter" || evt.key === "Escape") && tipOwner) { tipDismissed = tipOwner; hideTip(); }
+  }, true);
+  window.addEventListener("resize", hideTip);
+  document.addEventListener("scroll", (evt) => { if (evt.target !== capTip) hideTip(); }, true);
 
   /** Every object an arrow can reach, with its on-screen rectangle (a barrier: all its segments together). */
   function navigableObjects() {
@@ -1308,10 +1423,7 @@
       return true;
     }
 
-    beginFieldEdit(
-      el,
-      el.classList.contains("hazard") || el.classList.contains("top-event") ? "description" : "id"
-    );
+    beginFieldEdit(el, "description");
     return true;
   }
 
@@ -1334,8 +1446,27 @@
       writeEditableText(el, value);
     });
 
+    // The longest text is MAX_TEXT_CHARS. Typing or pasting past it is stopped (a paste is cut to fit), and from
+    // WARN_TEXT_CHARS a warning recommends referring to another document for the details.
+    el.addEventListener("beforeinput", (evt) => {
+      if (!evt.inputType?.startsWith("insert")) return;
+      const incoming = evt.data ?? evt.dataTransfer?.getData("text/plain") ?? "\n";
+      const sel = window.getSelection();
+      const selected = sel && el.contains(sel.anchorNode) ? sel.toString().length : 0;
+      const room = MAX_TEXT_CHARS - (readEditableText(el).length - selected);
+      if (incoming.length <= room) return;
+      evt.preventDefault();
+      if (room > 0 && incoming.length > 1) document.execCommand("insertText", false, incoming.slice(0, room));
+      showStatus(`The longest text is ${MAX_TEXT_CHARS} characters. Refer to another document for the details.`, "warning");
+    });
+
     el.addEventListener("input", () => {
-      el.dataset.full = readEditableText(el);
+      const value = readEditableText(el);
+      el.dataset.full = value;
+      if (value.length >= WARN_TEXT_CHARS && !el._warnedLong) {
+        el._warnedLong = true;
+        showStatus(`This text is ${value.length} of ${MAX_TEXT_CHARS} characters. Refer to another document for the details instead of writing more here.`, "warning");
+      } else if (value.length < WARN_TEXT_CHARS) el._warnedLong = false;
     });
 
     el.addEventListener("blur", () => {
@@ -1379,7 +1510,6 @@
 
     const idTag = document.createElement("div");
     idTag.className = "id-tag";
-    idTag.contentEditable = "true";
     idTag.dataset.role = "id";
     idTag.id = card.idTagId;
 
@@ -1400,7 +1530,6 @@
 
     const idTag = document.createElement("div");
     idTag.className = "id-tag";
-    idTag.contentEditable = "true";
     idTag.dataset.role = "id";
     idTag.id = segmentIdTagId(barrier, seg, index);
 
@@ -1602,6 +1731,7 @@
     });
 
     const barrier = getActiveBarrierState();
+    updateLinkBar();
     if (!barrier) {
       document.body.classList.remove("linking-mode");
       return;
@@ -1850,7 +1980,7 @@
   // ---------- Tab order ----------
 
   function fieldsOf(el) {
-    return el ? Array.from(el.querySelectorAll(".id-tag, .desc-text")) : [];
+    return el ? Array.from(el.querySelectorAll(".desc-text")) : [];
   }
 
   function firstBarrierSegmentsInColumnOrder(zone) {
@@ -1898,7 +2028,7 @@
       el.tabIndex = i++;
     });
 
-    document.querySelectorAll(".barrier .id-tag, .barrier .desc-text").forEach((f) => {
+    document.querySelectorAll(".barrier .desc-text").forEach((f) => {
       if (!orderedFields.includes(f)) f.tabIndex = -1;
     });
   }
@@ -2122,6 +2252,52 @@
     else barrier.protects.push(idTag.id);
 
     applyLinkModeUI();
+  }
+
+  /** The number in a cause's or consequence's id (C12 → 12, K3 → 3), or null. */
+  function idNumber(card) {
+    const m = /(\d+)\s*$/.exec(String(card.id || ""));
+    return m ? Number(m[1]) : null;
+  }
+
+  /** The cause or consequence a typed number points at: the one whose id ends in that number (not the row number). */
+  function findLinkTargetByNumber(barrierId, n) {
+    const cards = getLeafCardsInRowOrder(barrierId);
+    if (cards.some((c) => idNumber(c) !== null)) return cards.find((c) => idNumber(c) === n) || null;
+    return cards[n - 1] || null; // ids without numbers: fall back to the order on screen
+  }
+
+  // Alt+digits: the digits typed while Alt/Option is held; released Alt links (or unlinks) that number.
+  let linkNumberChord = "";
+  document.addEventListener("keyup", (evt) => {
+    if (evt.key !== "Alt" || !linkNumberChord) return;
+    evt.preventDefault(); // a lone Alt release would focus the browser's menu bar on Windows and Linux (Firefox, Edge)
+    const n = Number(linkNumberChord);
+    linkNumberChord = "";
+    if (ui.activeBarrierId) {
+      const cardState = findLinkTargetByNumber(ui.activeBarrierId, n);
+      const cardEl = cardState && document.getElementById(cardState.domId);
+      if (cardEl) toggleProtection(cardEl);
+      else showStatus(`No cause or consequence with number ${n}`, "warning");
+    }
+    updateLinkBar();
+  });
+  window.addEventListener("blur", () => { if (linkNumberChord) { linkNumberChord = ""; updateLinkBar(); } });
+
+  /** The bar next to the Add buttons: the ids of what the selected barrier protects (ids, not row numbers). */
+  function updateLinkBar() {
+    const bar = document.getElementById("linkBar");
+    if (!bar) return;
+    const barrier = getActiveBarrierState();
+    if (!barrier) { linkNumberChord = ""; bar.textContent = ""; bar.style.visibility = "hidden"; return; }
+    const cards = getLeafCardsInRowOrder(barrier.barrierId);
+    const ids = cards.filter((c) => barrier.protects.includes(c.idTagId)).map((c) => c.id);
+    const side = barrierSide(barrier.barrierId);
+    const what = side === "left" ? "causes" : "consequences";
+    const hint = side === "left" ? "Alt+digits link a cause by number" : "Alt+digits link a consequence by number";
+    bar.textContent = `${barrier.id} protects ${what}: ${ids.length ? ids.join(", ") : "none"}` +
+      (linkNumberChord ? `  ·  Alt+${linkNumberChord.split("").join("+")} → ${Number(linkNumberChord)}` : `  ·  ${hint}`);
+    bar.style.visibility = "visible";
   }
 
   function getLeafCardsInRowOrder(barrierId) {
@@ -2457,7 +2633,7 @@
     if (ui.activeBarrierId || !ui.selectedBarrierIds.size) return;
     if (document.activeElement && document.activeElement.isContentEditable) return;
     if (evt.metaKey || evt.ctrlKey) return;
-    if (evt.altKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
+    if (!evt.shiftKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
       evt.preventDefault();
       evt.stopImmediatePropagation();
       moveBarriers([...ui.selectedBarrierIds], evt.key === "ArrowLeft" ? -1 : 1);
@@ -2484,30 +2660,34 @@
       return;
     }
 
-    if (evt.altKey && !evt.metaKey && !evt.ctrlKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
+    // Alt/Option held while digits are typed builds a number (Alt+1+2, release Alt, links number 12); see the keyup below.
+    const digit = evt.altKey && !evt.metaKey && !evt.ctrlKey && !evt.shiftKey ? /^(?:Digit|Numpad)(\d)$/.exec(evt.code) : null;
+    if (digit) {
       evt.preventDefault();
       evt.stopImmediatePropagation();
-      moveBarrierColumn(ui.activeBarrierId, evt.key === "ArrowLeft" ? -1 : 1); // Alt/Option+arrow moves (5.6)
+      linkNumberChord += digit[1];
+      updateLinkBar();
+      return;
+    }
+
+    // A selected barrier moves along the only direction it can: left or right (Alt/Option+arrow does the same).
+    if (!evt.metaKey && !evt.ctrlKey && !evt.shiftKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
+      evt.preventDefault();
+      evt.stopImmediatePropagation();
+      moveBarrierColumn(ui.activeBarrierId, evt.key === "ArrowLeft" ? -1 : 1);
       return;
     }
 
     if (evt.metaKey || evt.ctrlKey || evt.altKey) return;
 
     if (/^[1-9]$/.test(evt.key)) {
-      const cards = getLeafCardsInRowOrder(ui.activeBarrierId);
-      const cardState = cards[Number(evt.key) - 1];
+      const cardState = findLinkTargetByNumber(ui.activeBarrierId, Number(evt.key));
       if (cardState) {
         evt.preventDefault();
         evt.stopImmediatePropagation();
         const cardEl = document.getElementById(cardState.domId);
         if (cardEl) toggleProtection(cardEl);
       }
-      return;
-    }
-
-    if (evt.key === "ArrowLeft" || evt.key === "ArrowRight") {
-      evt.preventDefault(); // plain arrows never move an object (5.6)
-      evt.stopImmediatePropagation();
       return;
     }
 
@@ -2533,10 +2713,11 @@
     const arrowKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
     if (!arrowKeys.includes(evt.key)) return;
 
+    // A selected cause or consequence moves up and down (with or without Alt/Option); it cannot move sideways.
     if (
-      evt.altKey &&
       !evt.metaKey &&
       !evt.ctrlKey &&
+      !evt.shiftKey &&
       (evt.key === "ArrowUp" || evt.key === "ArrowDown") &&
       selectedFocusDomId &&
       findCardByDomId(selectedFocusDomId) &&
@@ -2563,8 +2744,13 @@
       return;
     }
 
-    if (evt.altKey && !evt.metaKey && !evt.ctrlKey && (evt.key === "ArrowLeft" || evt.key === "ArrowRight")) {
-      evt.preventDefault(); // the browser's Alt+←/→ history is stopped in the diagram
+    if (
+      !evt.metaKey && !evt.ctrlKey && !evt.shiftKey &&
+      (evt.key === "ArrowLeft" || evt.key === "ArrowRight") &&
+      (evt.altKey || (selectedFocusDomId && findCardByDomId(selectedFocusDomId) && ui.selectedIds.size <= 1))
+    ) {
+      evt.preventDefault(); // the browser's Alt+←/→ history is stopped in the diagram; a selected card cannot move sideways
+      evt.stopImmediatePropagation();
       return;
     }
 
@@ -2579,8 +2765,15 @@
     if (evt.shiftKey && evt.target.closest(".barrier")) evt.preventDefault(); // no text selection on Shift+click
     const cardEl = evt.target.closest(".card");
     if (cardEl && cardEl.classList.contains("link-target")) evt.preventDefault();
-    if (isModClick(evt) && evt.target.closest(".id-tag, .desc-text")) {
+    // A click on a block selects the block, not its text (as in STPA): the mouse does not put a caret in a text that is not
+    // being edited; Enter does that. While a text is edited, a click inside it moves the caret as usual.
+    const field = evt.target.closest(".id-tag, .desc-text");
+    if (field && field !== document.activeElement) {
       evt.preventDefault();
+      // Focus leaves whatever had it (an edited text is confirmed, a draft in the AI panel stays but loses the keys), so that
+      // Enter after the click means "edit this block" and not "send the AI question".
+      const had = document.activeElement;
+      if (had && had !== document.body && had.blur) had.blur();
     }
   });
 
@@ -2595,12 +2788,19 @@
     if (el === getKeyboardHoverEl() || (el?.classList.contains("barrier") && el.classList.contains("is-keyboard-hover"))) return;
     setIndicated(el);
   });
-  bowtie.addEventListener("mouseleave", () => { if (!ui.activeBarrierId) clearKeyboardHover(); });
+  bowtie.addEventListener("mouseleave", (evt) => {
+    if (evt.relatedTarget?.closest?.(".cap-tip")) return; // onto the tooltip: the pointer is still with the object
+    if (!ui.activeBarrierId) clearKeyboardHover();
+  });
 
   document.addEventListener("click", (evt) => {
+    const clickedField = evt.target.closest(".id-tag, .desc-text");
+    if (clickedField && clickedField === document.activeElement) return; // a click in the text being edited
+    const editing = document.activeElement;
+    if (editing && editing.isContentEditable && !editing.contains(evt.target)) editing.blur(); // a click elsewhere applies the edit
     const mod = isModClick(evt);
     const barrierEl = evt.target.closest(".barrier");
-    if (evt.shiftKey && barrierEl && !evt.target.closest(".id-tag, .desc-text")) {
+    if (evt.shiftKey && barrierEl) {
       evt.preventDefault();
       toggleBarrierSelection(barrierEl.dataset.barrierId);
       return;
@@ -2634,25 +2834,23 @@
       }
     }
 
-    if (barrierEl && !evt.target.closest(".id-tag, .desc-text")) {
+    if (barrierEl) {
       enterLinkMode(barrierEl.dataset.barrierId);
       return;
     }
 
-    if (cardEl && !ui.activeBarrierId && !evt.target.closest(".id-tag, .desc-text")) {
+    if (cardEl && !ui.activeBarrierId) {
       selectComponent(cardEl);
       return;
     }
 
-    if (topEventEl && !ui.activeBarrierId && !evt.target.closest(".desc-text")) {
-      evt.preventDefault();
-      beginFieldEdit(topEventEl, "description");
+    if (topEventEl && !ui.activeBarrierId) {
+      selectComponent(topEventEl);
       return;
     }
 
-    if (hazardEl && !ui.activeBarrierId && !evt.target.closest(".desc-text")) {
-      evt.preventDefault();
-      beginFieldEdit(hazardEl, "description");
+    if (hazardEl && !ui.activeBarrierId) {
+      selectComponent(hazardEl);
       return;
     }
 
@@ -2690,6 +2888,7 @@
         cancelEditSession();
         const component = active.closest(".card, .barrier, .hazard, .top-event");
         active.blur();
+        blurNavigation = null;
         if (component) {
           clearComponentSelection();
           setKeyboardNavTarget(component, { select: false });
@@ -2704,6 +2903,7 @@
         blurNavigation = "apply";
         applyEditSession();
         active.blur();
+        blurNavigation = null;
         const component = active.closest(".card, .barrier, .hazard, .top-event");
         if (evt.metaKey || evt.ctrlKey) {
           if (component?.classList.contains("barrier")) {
@@ -2864,6 +3064,7 @@
 
   window.BowtieEditor = {
     getState: () => serializeState(),
+    formatNote: FORMAT_NOTE, // the "$comment" written at the top of a saved file
     replaceState,
     undo,
     redo,

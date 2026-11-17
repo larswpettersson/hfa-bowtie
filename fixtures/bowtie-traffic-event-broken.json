@@ -1,4 +1,12 @@
 {
+  "$comment": [
+    "HFA Bowtie diagram, version 1. This $comment is ignored when the file is opened.",
+    "Texts: hazard.label, topEvent.label and every description are at most 300 characters; the tool warns from 240. Put longer explanations in another document and refer to it. On screen a text shows at most its first 100 characters and 5 lines, followed by \"...\"; the whole text is kept.",
+    "Ids: causes C1, C2 …, consequences K1, K2 …, preventive barriers P1 …, reactive barriers R1 …; unique. The number in the id is what the link keys use (C12 is 12).",
+    "left.causes and right.consequences: row is 1..left.rows (right.rows for consequences); domId is c-<id>, idTagId is id-<id>, connectorTarget is id-<topEvent.id>.",
+    "Barriers: barrierId is the id in lower case. col is the grid column: preventive barriers 2..left.barrierCols+1 (column 1 holds the causes), reactive barriers 1..right.barrierCols (the consequences come after). protects lists the idTagId of the causes or consequences the barrier protects, on its own side. everLinked and authoredSegments are layout state written by the tool; copy them as they are.",
+    "Barrier strength: \"Normal\", \"Strong\" or \"Weak\". Status: \"Implemented\", \"Partly Implemented\", \"Not Implemented\", \"To be implemented\" or \"Unknown\"."
+  ],
   "version": 1,
   "meta": {
     "theme": "light",

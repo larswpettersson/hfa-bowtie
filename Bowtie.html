@@ -27,6 +27,7 @@
       --color-foreground: #0d1117;
       --color-foreground-muted: #57606a;
       --color-foreground-subtle: #8b949e;
+      --color-brand-primary: #d70000;
       --font-sans: "Open Sans", Arial, sans-serif; /* font.family.base */
       --gap-row: 16px;
       --gap-col: 16px;
@@ -53,6 +54,7 @@
       --color-foreground: #fafbfc;
       --color-foreground-muted: #c9d1d9;
       --color-foreground-subtle: #9ca3af;
+      --color-brand-primary: #ff4444;
       --status-implemented: #1a5a42;
       --status-not-implemented: #602a36;
       --status-temporary: #254f7a;
@@ -92,6 +94,9 @@
     .panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; background: var(--color-background-elevated); border: 1px solid var(--color-foreground-muted); border-radius: 8px; padding: 12px 16px 16px; gap: 12px; }
     .panel-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; }
     .panel-head h2 { margin: 0 8px 0 0; font-size: 16px; font-weight: 600; }
+    .link-bar { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: var(--color-foreground-muted); }
+    .cap-tip { position: fixed; z-index: 1000; max-width: min(360px, calc(100vw - 16px)); padding: 8px 12px; border-radius: 4px; font-size: 14px; line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 40vh; overflow-y: auto; overscroll-behavior: contain; background: var(--color-foreground); color: var(--color-background-elevated); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+    .cap-tip.is-passive { pointer-events: none; }
     .panel-body { display: flex; gap: 16px; flex: 1 1 auto; min-height: 0; }
 
     /* Matches Penpot "Bowtie Application": Toolbar sibling above Bowtie example;
@@ -399,12 +404,14 @@
       word-break: break-word;
     }
 
+    .desc-text:focus { cursor: text; }
     .id-tag:focus,
     .desc-text:focus {
       background: color-mix(in srgb, var(--color-foreground) 12%, transparent);
     }
 
     .desc-text {
+      cursor: default;
       margin: 0;
       font-size: 16px;
       line-height: 1.2;
@@ -638,6 +645,7 @@
           <button type="button" class="action-btn" aria-label="Add Preventive Barrier" data-action="addPreventiveBarrier" data-shortcut="b" aria-keyshortcuts="B" title="Add a preventive barrier"><span class="btn-label">Add Preventive <span class="ul">B</span>arrier</span></button>
           <button type="button" class="action-btn" aria-label="Add Reactive Barrier" data-action="addReactiveBarrier" data-shortcut="r" aria-keyshortcuts="R" title="Add a reactive barrier"><span class="btn-label">Add <span class="ul">R</span>eactive Barrier</span></button>
           <button type="button" class="action-btn" aria-label="Add Consequence" data-action="addConsequence" data-shortcut="q" aria-keyshortcuts="Q" title="Add a consequence"><span class="btn-label">Add Conse<span class="ul">q</span>uence</span></button>
+          <span class="link-bar" id="linkBar" role="status" aria-live="polite" style="visibility:hidden"></span>
         </div>
         <div class="panel-body">
       <div class="bowtie-wrap">
@@ -647,36 +655,36 @@
           </div>
           <section class="zone zone--left" id="zone-left" aria-label="Cause and Preventive Barriers">
             <article class="card" id="c-C1" data-kind="cause" data-row="1" data-col="1">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-C1" data-target="id-TE">C1</div>
+              <div class="id-tag" data-role="id" id="id-C1" data-target="id-TE">C1</div>
               <p class="desc-text" contenteditable="true" data-role="description">Lokföraren tappar uppmärksamheten (trötthet, distraktion eller hög arbetsbelastning)</p>
             </article>
             <article class="card" id="c-C2" data-kind="cause" data-row="2" data-col="1">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-C2" data-target="id-TE">C2</div>
+              <div class="id-tag" data-role="id" id="id-C2" data-target="id-TE">C2</div>
               <p class="desc-text" contenteditable="true" data-role="description">Lokföraren uppfattar signalen fel eller förväxlar den, t.ex. förväntar sig grön signal</p>
             </article>
             <article class="card" id="c-C3" data-kind="cause" data-row="3" data-col="1">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-C3" data-target="id-TE">C3</div>
+              <div class="id-tag" data-role="id" id="id-C3" data-target="id-TE">C3</div>
               <p class="desc-text" contenteditable="true" data-role="description">Dålig signalsikt på grund av dimma, snö, motljus eller växtlighet vid signalen</p>
             </article>
             <article class="card" id="c-C4" data-kind="cause" data-row="4" data-col="1">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-C4" data-target="id-TE">C4</div>
+              <div class="id-tag" data-role="id" id="id-C4" data-target="id-TE">C4</div>
               <p class="desc-text" contenteditable="true" data-role="description">Förlängd bromssträcka på grund av låg friktion (löv eller halka på rälsen)</p>
             </article>
 
             <div class="barrier" id="b-p1" data-barrier-id="p1" data-row="1" data-col="2" data-row-span="2" data-strength="Normal" data-status="Partly Implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-P1">P1</div>
+              <div class="id-tag" data-role="id" id="id-P1">P1</div>
               <p class="desc-text" contenteditable="true" data-role="description">Förarutbildning samt trötthets- och vilotidsregler</p>
             </div>
             <div class="barrier" id="b-p2" data-barrier-id="p2" data-row="3" data-col="2" data-row-span="1" data-strength="Normal" data-status="Implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-P2">P2</div>
+              <div class="id-tag" data-role="id" id="id-P2">P2</div>
               <p class="desc-text" contenteditable="true" data-role="description">Röjning av växtlighet och signalsiktsbesiktning</p>
             </div>
             <div class="barrier" id="b-p3" data-barrier-id="p3" data-row="4" data-col="2" data-row-span="1" data-strength="Weak" data-status="To be implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-P3">P3</div>
+              <div class="id-tag" data-role="id" id="id-P3">P3</div>
               <p class="desc-text" contenteditable="true" data-role="description">Halkbekämpning (sandning)</p>
             </div>
             <div class="barrier" id="b-p4" data-barrier-id="p4" data-row="1" data-col="3" data-row-span="4" data-strength="Strong" data-status="Implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-P4">P4</div>
+              <div class="id-tag" data-role="id" id="id-P4">P4</div>
               <p class="desc-text" contenteditable="true" data-role="description">ATC: hastighetsövervakning och automatisk inbromsning</p>
             </div>
           </section>
@@ -698,28 +706,28 @@
 
           <section class="zone zone--right" id="zone-right" aria-label="Reactive Barriers and Consequences">
             <div class="barrier" id="b-r1" data-barrier-id="r1" data-row="1" data-col="1" data-row-span="2" data-strength="Normal" data-status="Implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-R1">R1</div>
+              <div class="id-tag" data-role="id" id="id-R1">R1</div>
               <p class="desc-text" contenteditable="true" data-role="description">GSM-R-nödanrop till trafikledare</p>
             </div>
             <div class="barrier" id="b-r2" data-barrier-id="r2" data-row="1" data-col="2" data-row-span="2" data-strength="Strong" data-status="Not Implemented">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-R2">R2</div>
+              <div class="id-tag" data-role="id" id="id-R2">R2</div>
               <p class="desc-text" contenteditable="true" data-role="description">Flankskydd och skyddssträcka</p>
             </div>
             <div class="barrier" id="b-r3" data-barrier-id="r3" data-row="3" data-col="1" data-row-span="1" data-strength="Normal" data-status="Unknown">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-R3">R3</div>
+              <div class="id-tag" data-role="id" id="id-R3">R3</div>
               <p class="desc-text" contenteditable="true" data-role="description">Trafikstörningsplan</p>
             </div>
 
             <article class="card" id="c-K1" data-kind="consequence" data-row="1" data-col="3">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-K1" data-target="id-TE">K1</div>
+              <div class="id-tag" data-role="id" id="id-K1" data-target="id-TE">K1</div>
               <p class="desc-text" contenteditable="true" data-role="description">Kollision med annat tåg i spårkorsning eller mot mötande tåg</p>
             </article>
             <article class="card" id="c-K2" data-kind="consequence" data-row="2" data-col="3">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-K2" data-target="id-TE">K2</div>
+              <div class="id-tag" data-role="id" id="id-K2" data-target="id-TE">K2</div>
               <p class="desc-text" contenteditable="true" data-role="description">Avsporing vid körning över växel i fel läge</p>
             </article>
             <article class="card" id="c-K3" data-kind="consequence" data-row="3" data-col="3">
-              <div class="id-tag" contenteditable="true" data-role="id" id="id-K3" data-target="id-TE">K3</div>
+              <div class="id-tag" data-role="id" id="id-K3" data-target="id-TE">K3</div>
               <p class="desc-text" contenteditable="true" data-role="description">Trafikstörning och driftstopp på berörd bana</p>
             </article>
           </section>
@@ -746,11 +754,12 @@
 
           <h3>Redigera</h3>
           <dl>
-            <dt>Enter</dt><dd>Redigera</dd>
+            <dt>Klick</dt><dd>Markerar blocket (inte texten)</dd>
+            <dt>Enter</dt><dd>Redigera texten i det markerade eller indikerade blocket (id:n kan inte redigeras)</dd>
             <dt>Cmd/Ctrl+Enter</dt><dd>Markera / verkställ</dd>
             <dt>Esc</dt><dd>Ångra</dd>
             <dt>Shift+Enter</dt><dd>Ny rad</dd>
-            <dt>Tab / Shift+Tab</dt><dd>Navigera (verkställer inte medan något är markerat)</dd>
+            <dt>Tab / Shift+Tab</dt><dd>Bekräftar en pågående redigering och går vidare</dd>
             <dt>Backspace</dt><dd>Ta bort</dd>
             <dt>⌘Z / Ctrl+Z</dt><dd>Ångra senaste ändringen</dd>
             <dt>⌘⇧Z / Ctrl+Shift+Z / Ctrl+Y</dt><dd>Gör om</dd>
@@ -759,7 +768,8 @@
           <h3>Navigera</h3>
           <dl>
             <dt>Piltangenter</dt><dd>Förhandsvisa vid hover; markera med Cmd/Ctrl+Enter</dd>
-            <dt>Alt+↑ ↓</dt><dd>Flytta rad</dd>
+            <dt>↑ ↓</dt><dd>Markerad orsak/konsekvens: flytta rad (Alt+↑ ↓ fungerar också)</dd>
+            <dt>← →</dt><dd>Markerad barriär: flytta kolumn</dd>
             <dt>Shift+↑ ↓</dt><dd>Utöka</dd>
             <dt>Cmd/Ctrl+klick</dt><dd>Flervalsmarkering</dd>
             <dt>Mellanslag + dra</dt><dd>Panorera diagrammet</dd>
@@ -767,9 +777,10 @@
 
           <h3>Länkläge (barriär markerad)</h3>
           <dl>
-            <dt>Alt/Option + ← →</dt><dd>Flytta kolumn</dd>
+            <dt>← → / Alt+← →</dt><dd>Flytta kolumn</dd>
             <dt>↑ ↓</dt><dd>Bläddra bland länkar</dd>
-            <dt>1–9</dt><dd>Växla länk</dd>
+            <dt>1–9</dt><dd>Växla länk till orsak/konsekvens med det id-numret (C3, K3 …)</dd>
+            <dt>Alt/Option + siffror</dt><dd>Fler än 9: håll Alt och skriv siffrorna, t.ex. Alt+1+2, släpp Alt → nummer 12</dd>
             <dt>Enter / Esc</dt><dd>Verkställ / ångra</dd>
             <dt>I / P / N / T / U</dt><dd>Status</dd>
             <dt>S / L / W</dt><dd>Strength</dd>
